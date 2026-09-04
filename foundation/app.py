@@ -1,10 +1,12 @@
 from typing import Annotated
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.routing import NoMatchFound
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from foundation import audit_view, auth, discovery, forms
 from foundation.config import CURRENT_USER_COOKIE, TEMPLATES_DIR
@@ -28,6 +30,56 @@ def mount_apps() -> None:
 
 
 mount_apps()
+
+
+def _error_status_text(status_code: int) -> str:
+    if status_code == 404:
+        return "Not found"
+    if status_code in {401, 403}:
+        return "Not allowed"
+    return "Something went wrong"
+
+
+def _accepts_html(request: Request) -> bool:
+    return "text/html" in request.headers.get("accept", "")
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if not _accepts_html(request):
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers=exc.headers,
+        )
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "status_code": exc.status_code,
+            "status_text": _error_status_text(exc.status_code),
+            "detail": exc.detail,
+        },
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    detail = exc.errors()
+    if not _accepts_html(request):
+        return JSONResponse({"detail": detail}, status_code=400)
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "status_code": 400,
+            "status_text": "Something went wrong",
+            "detail": "The request could not be understood.",
+        },
+        status_code=400,
+    )
 
 
 @app.middleware("http")

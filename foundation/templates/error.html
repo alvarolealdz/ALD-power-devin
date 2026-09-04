@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ status_text }} · PowerDevin{% endblock %}
+
+{% block content %}
+  <div class="page-head">
+    <div>
+      <p class="muted">{{ status_code }}</p>
+      <h1>{{ status_text }}</h1>
+    </div>
+  </div>
+  <section class="card">
+    <p>{{ detail }}</p>
+    <p class="toolbar"><a class="btn btn-primary" href="{{ url_for('index') }}">Back to home</a></p>
+  </section>
+{% endblock %}

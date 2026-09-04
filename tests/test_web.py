@@ -131,3 +131,34 @@ def test_deleted_activity_has_no_dead_detail_link(client, session):
     )
     assert deleted is not None
     assert f"/widgets/{row.id}" not in deleted.group()
+
+
+def test_html_errors_render_friendly_pages(client, session, seeded):
+    not_found = client.get(
+        "/kyc-queue/99999",
+        headers={"accept": "text/html"},
+    )
+    assert not_found.status_code == 404
+    assert "Not found" in not_found.text
+    assert "no such row" in not_found.text
+
+    response = client.post(
+        "/widgets",
+        data={"label": "Protected", "status": "draft"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    viewer_role = session.scalars(select(Role).where(Role.name == ROLE_VIEWER)).one()
+    viewer = User(
+        email="html-viewer@example.com", display_name="HTML Viewer", role_id=viewer_role.id
+    )
+    audit.insert(session, viewer, actor=seeded)
+    client.cookies.set(CURRENT_USER_COOKIE, str(viewer.id))
+
+    forbidden = client.post(
+        "/widgets/1/delete",
+        headers={"accept": "text/html"},
+        follow_redirects=False,
+    )
+    assert forbidden.status_code == 403
+    assert "Not allowed" in forbidden.text
