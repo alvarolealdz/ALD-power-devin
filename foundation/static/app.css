@@ -554,21 +554,80 @@ button:disabled,
 
 .cell-primary a {
   font-weight: 600;
-  color: var(--text);
+  color: var(--accent);
 }
 
 .cell-primary a:hover {
-  color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
+}
+
+.cell-text {
+  max-width: 22ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-date {
+  white-space: nowrap;
+}
+
+.cell-toggle {
+  text-align: center;
+}
+
+.switch {
+  appearance: none;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: background 0.12s;
+}
+
+.switch::before {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: transform 0.12s;
+}
+
+.switch:checked {
+  background: var(--accent);
+}
+
+.switch:checked::before {
+  transform: translateX(16px);
+}
+
+.switch:disabled {
+  cursor: not-allowed;
 }
 
 .row-actions {
   text-align: right;
-  white-space: nowrap;
+}
+
+.row-actions .actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 240px;
+  margin-left: auto;
 }
 
 .row-actions .btn {
   opacity: 0.55;
+  padding: 4px 8px;
 }
 
 .table tbody tr:hover .row-actions .btn {

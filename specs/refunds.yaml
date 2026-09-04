@@ -19,6 +19,9 @@ fields:
   - name: amount
     type: number
     required: true
+    decimals: 2
+    unit_field: currency
+    sample: {min: 5, max: 2500}
 
   - name: currency
     type: text
@@ -27,7 +30,17 @@ fields:
 
   - name: reason
     type: text
-    sample: sentence
+    sample:
+      - Duplicate charge
+      - Item never arrived
+      - Subscription cancelled before renewal
+      - Incorrect amount charged
+      - Damaged item received
+      - Order was cancelled
+      - Returned item not yet credited
+      - Promotional price was not applied
+      - Service was unavailable
+      - Payment was made twice
 
   - name: status
     type: enum

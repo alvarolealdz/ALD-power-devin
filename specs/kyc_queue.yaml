@@ -19,6 +19,8 @@ fields:
 
   - name: risk_score
     type: number
+    decimals: 0
+    sample: {min: 1, max: 100}
 
   - name: status
     type: enum
@@ -42,4 +44,14 @@ fields:
 
   - name: notes
     type: text
-    sample: sentence
+    sample:
+      - Passport expired, awaiting new scan
+      - Source of funds letter received
+      - PEP screening clear
+      - Address document needs a clearer image
+      - Name matched supporting documents
+      - Waiting for translated identification
+      - Additional income evidence requested
+      - Screening completed with no concerns
+      - Reviewer left a follow-up question
+      - Documents verified against the submitted profile

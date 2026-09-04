@@ -3,7 +3,7 @@
   "files": {
     "apps/vendor_contracts/__init__.py": "df1afbd1041e09e0f67f94830fb70479c3a9332543314a569a532dc3932b2993",
     "apps/vendor_contracts/model.py": "d2974075c5632746ebe60ecd65d85b794c1b4973e325c4e28701c8f8154898b6",
-    "apps/vendor_contracts/routes.py": "b6d78a2e0d8b4fdad542868650eb289135307e71fbe9f677762b08e501f4b250",
+    "apps/vendor_contracts/routes.py": "3293150f42e63366bf419537d9ba256ac0ca62668322ce89138b12089909dd60",
     "apps/vendor_contracts/templates/detail.html": "02e7da41a9ebd342b08ff7ba9abffbe2a5fefa768caba6072f4ab35c10e95dbf",
     "apps/vendor_contracts/templates/form.html": "6ede686b6b79087e90a18b2d164f656519a66d18a486fee5a0d24a50407e15e0",
     "apps/vendor_contracts/templates/list.html": "b92ffee9bb5c25deed3fb955242d58abd08905c93145ae1fa86570115e93ee72",

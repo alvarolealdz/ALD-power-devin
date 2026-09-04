@@ -26,8 +26,8 @@ uv run python scaffold/generate.py specs/feature_flags.yaml # writes apps/featur
 uv run python scaffold/generate.py specs/vendor_contracts.yaml # writes apps/vendor_contracts/ + a migration
 uv run alembic upgrade head                             # create the schema
 uv run python -m foundation.seed                        # roles + admin/editor/viewer users
-uv run python scaffold/seed.py specs/widgets.yaml --rows 30
-uv run python scaffold/seed.py specs/kyc_queue.yaml --rows 12
+uv run python scaffold/seed.py specs/widgets.yaml --rows 25
+uv run python scaffold/seed.py specs/kyc_queue.yaml --rows 30
 uv run python scaffold/seed.py specs/refunds.yaml --rows 25
 uv run python scaffold/seed.py specs/feature_flags.yaml --rows 12
 uv run python scaffold/seed.py specs/vendor_contracts.yaml --rows 25
@@ -66,6 +66,10 @@ fields:
   - name: internal_note
     type: text
     sensitive: true     # admin-only, server-side, in the list and the form
+  - name: quantity
+    type: number
+    decimals: 2          # fixed display and form precision, from 0 to 4
+    unit_field: currency # optional text or enum field shown beside the number
 ```
 
 A field that is both `required` and `sensitive` makes creation admin-only
@@ -74,6 +78,12 @@ A field that is both `required` and `sensitive` makes creation admin-only
 Optional top-level keys: `app` (directory and URL prefix, default derived from
 `entity`), `title` (nav and page heading), `singular` (button and heading
 noun, e.g. `KYC review`), `description` (home card, list header, empty state).
+
+To add an app, describe it to Devin in plain English: its fields, which fields
+are sensitive, and (if it has a workflow) its states plus the open and terminal
+states. Devin writes `specs/<name>.yaml` and `apps/<name>/spec.md`; then run the
+three commands in the “Run it” section. Hand-writing the YAML remains the
+fallback when you prefer to work directly in the repository.
 
 ### Workflow apps
 
@@ -118,9 +128,10 @@ Seeding is optional; the app works empty. `uv run python scaffold/seed.py specs/
 spread across options, dates in a recent window, fks picked from real rows,
 all written through `foundation.audit` under a system actor, in one
 transaction. Text fields take an optional `sample:` — either a list of literal
-values or one of `person_name | reference | sentence | words` — so a
+values or one of `person_name | reference | sentence | words | slug | company` — so a
 "customer name" gets plausible names without the seeder knowing what a
-customer is.
+customer is. Number fields accept `sample: {min: 5, max: 2500}` and round
+values to the field's `decimals` precision.
 
 ### What comes out
 

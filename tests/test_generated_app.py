@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from apps.kyc_queue.model import KycReview
+from apps.refunds.model import Refund
 from apps.widgets.model import Widget
 from foundation import audit, auth, discovery
 from foundation.app import app
@@ -159,6 +160,11 @@ def test_workflow_list_is_a_queue_with_tabs_and_stats(client, session, editor, v
     assert "Waiting" in default.text
     assert "2" in default.text
     assert "Decided today" in default.text
+    assert 'name="status" value="review"' in default.text
+
+    as_user(client, viewer)
+    viewer_list = client.get("/widgets")
+    assert 'name="status" value="review"' not in viewer_list.text
 
     done = client.get("/widgets?state=done")
     assert "Gamma" in done.text
@@ -168,6 +174,32 @@ def test_workflow_list_is_a_queue_with_tabs_and_stats(client, session, editor, v
     assert client.get("/widgets?state=bogus").status_code == 400
 
     as_user(client, editor)
+    list_decision = client.post(
+        "/widgets/1/status",
+        data={"status": "done", "expected": "draft", "next": "/widgets?state=draft"},
+        follow_redirects=False,
+    )
+    assert list_decision.status_code == 303
+    assert list_decision.headers["location"] == "/widgets?state=draft"
+    row_one = session.scalars(select(Widget).where(Widget.id == 1)).one()
+    session.refresh(row_one)
+    assert row_one.status == "done"
+
+    fallback = client.post(
+        "/widgets/2/status",
+        data={"status": "review", "expected": "draft", "next": "/outside"},
+        follow_redirects=False,
+    )
+    assert fallback.status_code == 303
+    assert fallback.headers["location"].endswith("/widgets")
+
+    # Restore the first row for the rest of the queue assertions.
+    audit.update(
+        session,
+        session.scalars(select(Widget).where(Widget.id == 1)).one(),
+        {"status": "draft"},
+        actor=editor,
+    )
     decision = client.post("/widgets/1/status", data={"status": "done"}, follow_redirects=False)
     assert decision.status_code == 303
     assert decision.headers["location"].endswith("/widgets")
@@ -231,7 +263,7 @@ def test_a_reference_to_a_row_that_does_not_exist_is_a_bad_request(client, sessi
     assert session.scalars(select(Widget)).all() == []
 
 
-@pytest.mark.parametrize("quantity", ["NaN", "Infinity", "-9" * 30, "1.00001"])
+@pytest.mark.parametrize("quantity", ["NaN", "Infinity", "-9" * 30])
 def test_numbers_the_column_cannot_hold_are_refused(client, session, quantity):
     response = client.post("/widgets", data={"label": "Alpha", "quantity": quantity})
 
@@ -243,7 +275,53 @@ def test_a_decimal_quantity_survives_the_round_trip(client, session):
     client.post("/widgets", data={"label": "Alpha", "quantity": "42.5", "status": "draft"})
 
     assert str(session.scalars(select(Widget)).one().quantity) == "42.5000"
-    assert 'step="any"' in client.get("/widgets/new").text
+    assert 'step="0.01"' in client.get("/widgets/new").text
+
+
+def test_bool_toggle_is_audited_and_role_protected(client, session, editor, viewer, widget):
+    row = session.scalars(select(Widget)).one()
+    before = row.active
+    response = client.post(
+        f"/widgets/{row.id}/toggle/active",
+        data={"next": "/widgets"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/widgets"
+    session.refresh(row)
+    assert row.active is not before
+    assert session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "widget",
+            AuditLog.row_id == str(row.id),
+            AuditLog.action == AuditLog.ACTION_UPDATE,
+        )
+    ).one()
+
+    as_user(client, viewer)
+    assert client.post(f"/widgets/{row.id}/toggle/active").status_code == 403
+    as_user(client, editor)
+    assert client.post(f"/widgets/{row.id}/toggle/missing").status_code == 404
+
+
+def test_number_unit_display_hides_unit_column_only_in_list(client, session, seeded):
+    row = Refund(
+        transaction_ref="TX-001",
+        customer_ref="CUS-001",
+        amount="93",
+        currency="GBP",
+        reason="Duplicate charge",
+        status="pending",
+        approver_id=seeded.id,
+    )
+    audit.insert(session, row, actor=seeded)
+
+    listing = client.get("/refunds")
+    assert "93.00 GBP" in listing.text
+    assert ">Currency<" not in listing.text
+    detail = client.get(f"/refunds/{row.id}")
+    assert "93.00 GBP" in detail.text
+    assert "Currency" not in detail.text
 
 
 def test_the_user_switcher_is_populated_on_a_generated_page(client, editor):

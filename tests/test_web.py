@@ -73,6 +73,8 @@ def test_display_uses_human_readable_dates():
     assert forms.display(Decimal("20.0000")) == "20"
     assert forms.display(Decimal("63.5000")) == "63.5"
     assert forms.display(Decimal("0.2000")) == "0.2"
+    assert forms.display_number(Decimal("1234.5"), 2) == "1,234.50"
+    assert forms.display_number(Decimal(1000), 0) == "1,000"
 
 
 def test_foundation_route_names_are_reserved():

@@ -67,6 +67,43 @@ OPEN_STATES = (
 
 router = APIRouter(prefix="[[ spec.mount_path ]]", tags=["[[ spec.app ]]"])
 
+_TOGGLEABLE = (
+[% for field in spec.fields if field.type == "bool" %]
+    "[[ field.name ]]",
+[% endfor %]
+)
+_SENSITIVE_TOGGLEABLE = (
+[% for field in spec.fields if field.type == "bool" and field.sensitive %]
+    "[[ field.name ]]",
+[% endfor %]
+)
+
+
+def _next_url(request: Request) -> str:
+    return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+
+def _redirect_next(request: Request, next_url: str) -> RedirectResponse:
+    mount_path = "[[ spec.mount_path ]]"
+    target = (
+        next_url
+        if next_url == mount_path or next_url.startswith(f"{mount_path}?")
+        else str(request.url_for("[[ spec.app ]]_list"))
+    )
+    return RedirectResponse(target, status_code=303)
+
+[% if spec.workflow_field %]
+def _decision_options(current: str) -> tuple[str, ...]:
+    return [[ spec.workflow_field.name|upper ]]_TRANSITIONS.get(
+        current,
+        tuple(
+            option
+            for option in [[ spec.workflow_field.name|upper ]]_OPTIONS
+            if option != current
+        ),
+    )
+
+[% endif %]
 
 def _get(session: Session, [[ spec.entity ]]_id: int) -> [[ spec.class_name ]]:
     row = session.get([[ spec.class_name ]], [[ spec.entity ]]_id)
@@ -87,11 +124,13 @@ def _columns(
     """What the list view shows. Sensitive columns never reach a non-admin."""
     columns = []
 [% for field in spec.fields %]
+[% if field.name not in spec.unit_field_names %]
 [% if field.sensitive %]
     if admin:
         columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": ("link" if not columns else "[[ column_kinds[field.name] ]]")})
 [% else %]
     columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": ("link" if not columns else "[[ column_kinds[field.name] ]]")})
+[% endif %]
 [% endif %]
 [% endfor %]
     columns.append({"key": "id", "label": "ID", "kind": "id"})
@@ -114,15 +153,21 @@ def _columns(
     return columns
 
 
-def _row(request: Request, row: [[ spec.class_name ]], admin: bool) -> dict[str, object]:
+def _row(
+    request: Request,
+    row: [[ spec.class_name ]],
+    admin: bool,
+    writable: bool,
+    next_url: str,
+) -> dict[str, object]:
     data: dict[str, object] = {
-[% for field in spec.fields if not field.sensitive %]
+[% for field in spec.fields if not field.sensitive and field.name not in spec.unit_field_names %]
         "[[ field.name ]]": [[ field_value_expressions[field.name] ]],
 [% endfor %]
     }
 [% if spec.sensitive_fields %]
     if admin:
-[% for field in spec.fields if field.sensitive %]
+[% for field in spec.fields if field.sensitive and field.name not in spec.unit_field_names %]
         data["[[ field.name ]]"] = [[ field_value_expressions[field.name] ]]
 [% endfor %]
 [% endif %]
@@ -136,21 +181,39 @@ def _row(request: Request, row: [[ spec.class_name ]], admin: bool) -> dict[str,
         }
     ordered["id"] = row.id
     ordered["edit_url"] = str(request.url_for("[[ spec.app ]]_edit", [[ spec.entity ]]_id=row.id))
+[% if spec.workflow_field %]
+    ordered["decisions"] = [
+        {
+            "label": option,
+            "value": option,
+            "tone": [[ spec.workflow_field.name|upper ]]_TONES.get(option, "neutral"),
+            "action": str(request.url_for("[[ spec.app ]]_decide", [[ spec.entity ]]_id=row.id)),
+            "field": WORKFLOW_FIELD,
+            "expected": row.[[ spec.workflow_field.name ]],
+            "next": next_url,
+        }
+        for option in _decision_options(row.[[ spec.workflow_field.name ]])
+    ] if writable else []
+[% else %]
+    ordered["decisions"] = []
+[% endif %]
     return ordered
 
 
 def _items(row: [[ spec.class_name ]], admin: bool) -> list[dict[str, object]]:
     items: list[dict[str, object]] = []
 [% for field in spec.fields %]
+[% if field.name not in spec.unit_field_names %]
 [% if field.sensitive %]
     if admin:
         items.append(
-            {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]}
+            {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type in ("enum", "bool") %], "kind": "badge"[% endif %]}
         )
 [% else %]
     items.append(
-        {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]}
+        {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type in ("enum", "bool") %], "kind": "badge"[% endif %]}
     )
+[% endif %]
 [% endif %]
 [% endfor %]
     return items
@@ -362,6 +425,7 @@ def list_rows(
         query = query.order_by(MODEL.id.desc())
 [% endif %]
     rows = session.scalars(query).all()
+    next_url = _next_url(request)
     new_url = (
         str(request.url_for("[[ spec.app ]]_new"))
 [% if spec.create_is_admin_only %]
@@ -384,7 +448,10 @@ def list_rows(
                 sort=normalized_sort,
                 direction=normalized_dir,
             ),
-            "rows": [_row(request, row, admin) for row in rows],
+            "rows": [
+                _row(request, row, admin, auth.can_write(current_user), next_url)
+                for row in rows
+            ],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
             "list_url": str(request.url_for("[[ spec.app ]]_list")),
@@ -543,6 +610,7 @@ def decide_row(
     [[ spec.entity ]]_id: int,
     [[ spec.workflow_field.name ]]: Annotated[str, Form()] = "",
     expected: Annotated[str, Form()] = "",
+    next: Annotated[str, Form()] = "",
 ):
     auth.require_write(current_user)
     row = _get(session, [[ spec.entity ]]_id)
@@ -566,12 +634,29 @@ def decide_row(
     ):
         raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"[[ spec.workflow_field.name ]]": [[ spec.workflow_field.name ]]})
-    return RedirectResponse(
-        request.url_for("[[ spec.app ]]_list"), status_code=303
-    )
+    return _redirect_next(request, next)
 
 
 [% endif %]
+@router.post("/{[[ spec.entity ]]_id}/toggle/{column}", name="[[ spec.app ]]_toggle")
+def toggle_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    [[ spec.entity ]]_id: int,
+    column: str,
+    next: Annotated[str, Form()] = "",
+):
+    if column not in _TOGGLEABLE:
+        raise HTTPException(status_code=404, detail="no such toggle")
+    auth.require_write(current_user)
+    if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin access required")
+    row = _get(session, [[ spec.entity ]]_id)
+    audit.update(session, row, {column: not getattr(row, column)})
+    return _redirect_next(request, next)
+
+
 @router.get("/{[[ spec.entity ]]_id}/edit", name="[[ spec.app ]]_edit")
 def edit_row(
     request: Request, session: DbSession, current_user: CurrentUser, [[ spec.entity ]]_id: int

@@ -53,6 +53,30 @@ STATUS_CLOSED = (
 
 router = APIRouter(prefix="/kyc-queue", tags=["kyc_queue"])
 
+_TOGGLEABLE = ()
+_SENSITIVE_TOGGLEABLE = ()
+
+
+def _next_url(request: Request) -> str:
+    return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+
+def _redirect_next(request: Request, next_url: str) -> RedirectResponse:
+    mount_path = "/kyc-queue"
+    target = (
+        next_url
+        if next_url == mount_path or next_url.startswith(f"{mount_path}?")
+        else str(request.url_for("kyc_queue_list"))
+    )
+    return RedirectResponse(target, status_code=303)
+
+
+def _decision_options(current: str) -> tuple[str, ...]:
+    return STATUS_TRANSITIONS.get(
+        current,
+        tuple(option for option in STATUS_OPTIONS if option != current),
+    )
+
 
 def _get(session: Session, kyc_review_id: int) -> KycReview:
     row = session.get(KycReview, kyc_review_id)
@@ -123,9 +147,15 @@ def _columns(
     return columns
 
 
-def _row(request: Request, row: KycReview, admin: bool) -> dict[str, object]:
+def _row(
+    request: Request,
+    row: KycReview,
+    admin: bool,
+    writable: bool,
+    next_url: str,
+) -> dict[str, object]:
     data: dict[str, object] = {
-        "risk_score": forms.display(row.risk_score),
+        "risk_score": forms.display(forms.display_number(row.risk_score, 0)),
         "status": (
             None
             if row.status is None
@@ -163,6 +193,22 @@ def _row(request: Request, row: KycReview, admin: bool) -> dict[str, object]:
         }
     ordered["id"] = row.id
     ordered["edit_url"] = str(request.url_for("kyc_queue_edit", kyc_review_id=row.id))
+    ordered["decisions"] = (
+        [
+            {
+                "label": option,
+                "value": option,
+                "tone": STATUS_TONES.get(option, "neutral"),
+                "action": str(request.url_for("kyc_queue_decide", kyc_review_id=row.id)),
+                "field": WORKFLOW_FIELD,
+                "expected": row.status,
+                "next": next_url,
+            }
+            for option in _decision_options(row.status)
+        ]
+        if writable
+        else []
+    )
     return ordered
 
 
@@ -172,7 +218,9 @@ def _items(row: KycReview, admin: bool) -> list[dict[str, object]]:
         items.append({"label": "Customer name", "value": forms.display(row.customer_name)})
     if admin:
         items.append({"label": "Customer ref", "value": forms.display(row.customer_ref)})
-    items.append({"label": "Risk score", "value": forms.display(row.risk_score)})
+    items.append(
+        {"label": "Risk score", "value": forms.display(forms.display_number(row.risk_score, 0))}
+    )
     items.append(
         {
             "label": "Status",
@@ -204,10 +252,10 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
         {
             "name": "risk_score",
             "label": "Risk score",
-            "value": values.get("risk_score"),
+            "value": forms.form_number(values.get("risk_score"), 0),
             "required": False,
             "type": "number",
-            "step": "any",
+            "step": "1",
         },
         {
             "name": "status",
@@ -294,7 +342,7 @@ def _check_references(session: Session, values: dict[str, object], errors: dict[
 def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], dict[str, str]]:
     values: dict[str, object] = {}
     errors: dict[str, str] = {}
-    forms.collect(values, errors, "risk_score", forms.number, raw.get("risk_score"))
+    forms.collect(values, errors, "risk_score", forms.number, raw.get("risk_score"), decimals=0)
     forms.collect(
         values,
         errors,
@@ -443,6 +491,7 @@ def list_rows(
     else:
         query = query.order_by(MODEL.id.desc())
     rows = session.scalars(query).all()
+    next_url = _next_url(request)
     new_url = str(request.url_for("kyc_queue_new")) if auth.is_admin(current_user) else None
     return templates.TemplateResponse(
         request,
@@ -457,7 +506,9 @@ def list_rows(
                 sort=normalized_sort,
                 direction=normalized_dir,
             ),
-            "rows": [_row(request, row, admin) for row in rows],
+            "rows": [
+                _row(request, row, admin, auth.can_write(current_user), next_url) for row in rows
+            ],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
             "list_url": str(request.url_for("kyc_queue_list")),
@@ -599,6 +650,7 @@ def decide_row(
     kyc_review_id: int,
     status: Annotated[str, Form()] = "",
     expected: Annotated[str, Form()] = "",
+    next: Annotated[str, Form()] = "",
 ):
     auth.require_write(current_user)
     row = _get(session, kyc_review_id)
@@ -618,7 +670,26 @@ def decide_row(
     ):
         raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"status": status})
-    return RedirectResponse(request.url_for("kyc_queue_list"), status_code=303)
+    return _redirect_next(request, next)
+
+
+@router.post("/{kyc_review_id}/toggle/{column}", name="kyc_queue_toggle")
+def toggle_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    kyc_review_id: int,
+    column: str,
+    next: Annotated[str, Form()] = "",
+):
+    if column not in _TOGGLEABLE:
+        raise HTTPException(status_code=404, detail="no such toggle")
+    auth.require_write(current_user)
+    if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin access required")
+    row = _get(session, kyc_review_id)
+    audit.update(session, row, {column: not getattr(row, column)})
+    return _redirect_next(request, next)
 
 
 @router.get("/{kyc_review_id}/edit", name="kyc_queue_edit")

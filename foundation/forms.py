@@ -31,7 +31,7 @@ def text(raw: str | None, *, required: bool = False, max_length: int | None = No
     return value
 
 
-def number(raw: str | None, *, required: bool = False) -> Decimal | None:
+def number(raw: str | None, *, required: bool = False, decimals: int = 2) -> Decimal | None:
     """A finite decimal that the column can hold.
 
     ``Decimal`` happily parses ``NaN`` and ``Infinity``, and SQLite stores
@@ -47,13 +47,16 @@ def number(raw: str | None, *, required: bool = False) -> Decimal | None:
         raise FieldError("must be a number") from error
     if not parsed.is_finite():
         raise FieldError("must be a finite number")
-    digits, scale = NUMBER_PRECISION, NUMBER_SCALE
-    exponent = parsed.as_tuple().exponent
-    if not isinstance(exponent, int) or -exponent > scale:
-        raise FieldError(f"must have at most {scale} decimal places")
-    if len(parsed.as_tuple().digits) + exponent > digits - scale:
-        raise FieldError(f"must have at most {digits - scale} digits before the decimal point")
-    return parsed
+    try:
+        quantized = parsed.quantize(Decimal(1).scaleb(-decimals))
+    except InvalidOperation as error:
+        raise FieldError(f"must have at most {NUMBER_PRECISION - NUMBER_SCALE} digits") from error
+    integer_digits = len(str(quantized.copy_abs().quantize(Decimal(1))))
+    if integer_digits > NUMBER_PRECISION - NUMBER_SCALE:
+        raise FieldError(
+            f"must have at most {NUMBER_PRECISION - NUMBER_SCALE} digits before the decimal point"
+        )
+    return quantized
 
 
 def day(raw: str | None, *, required: bool = False) -> date | None:
@@ -122,8 +125,20 @@ def display(value: Any) -> str:
     if isinstance(value, date):
         return value.strftime("%-d %b %Y")
     if isinstance(value, Decimal):
-        return format(value.normalize(), "f")
+        return format(value.normalize(), ",f")
     return str(value)
+
+
+def display_number(value: Any, decimals: int) -> str:
+    if value is None:
+        return ""
+    return f"{value:,.{decimals}f}"
+
+
+def form_number(value: Any, decimals: int) -> str:
+    if value is None:
+        return ""
+    return f"{value:.{decimals}f}"
 
 
 def submitted(form: Mapping[str, Any], name: str) -> str | None:

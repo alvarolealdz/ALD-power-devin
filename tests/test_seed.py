@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
+from apps.feature_flags.model import FeatureFlag
 from apps.kyc_queue.model import KycReview
+from apps.vendor_contracts.model import VendorContract
 from apps.widgets.model import Widget
 from foundation import audit
 from foundation.models import AuditLog
@@ -93,3 +95,21 @@ def test_append_offsets_reference_values(engine, session, seeded, monkeypatch):
     references = session.scalars(select(KycReview.customer_ref).order_by(KycReview.id)).all()
     assert len(references) == 10
     assert len(set(references)) == 10
+
+
+def test_seed_slug_company_and_number_ranges(engine, session, seeded, monkeypatch):
+    monkeypatch.setattr(seed_module, "SessionFactory", lambda: session)
+    seed_module.seed(Path("specs/feature_flags.yaml"), rows=12, seed=3, append=False)
+    flags = session.scalars(select(FeatureFlag).order_by(FeatureFlag.id)).all()
+    keys = [row.flag_key for row in flags]
+    assert all(" " not in key for key in keys)
+    assert len(set(keys)) == 12
+    assert flags[0].description.startswith("Gates")
+    assert flags[-1].description.startswith("Adds rich notes")
+
+    seed_module.seed(
+        Path("specs/vendor_contracts.yaml"), rows=5, seed=4, append=False, today=date(2026, 1, 1)
+    )
+    rows = session.scalars(select(VendorContract)).all()
+    assert all(5000 <= int(row.annual_value) <= 250000 for row in rows)
+    assert rows[0].vendor_name in seed_module.COMPANIES

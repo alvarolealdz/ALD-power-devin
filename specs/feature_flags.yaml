@@ -8,11 +8,35 @@ fields:
   - name: flag_key
     type: text
     required: true
-    sample: words
+    sample:
+      - checkout.new_payment_sheet
+      - onboarding.kyc_v2
+      - payments.instant_transfers
+      - search.saved_filters
+      - profile.compact_header
+      - reports.export_v2
+      - notifications.digest_email
+      - billing.invoice_preview
+      - dashboard.activity_cards
+      - mobile.quick_actions
+      - settings.access_requests
+      - support.rich_notes
 
   - name: description
     type: text
-    sample: sentence
+    sample:
+      - Gates the refreshed payment sheet at checkout.
+      - Enables the second version of the onboarding flow.
+      - Shows instant transfer options in payments.
+      - Allows users to save and reuse search filters.
+      - Uses a compact header on profile pages.
+      - Enables the updated report export pipeline.
+      - Sends a grouped summary of notifications by email.
+      - Shows a preview before an invoice is finalized.
+      - Adds activity cards to the main dashboard.
+      - Enables shortcut actions in the mobile navigation.
+      - Allows users to request access from settings.
+      - Adds rich notes to support records.
 
   - name: enabled
     type: bool

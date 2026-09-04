@@ -157,7 +157,7 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
             field.name: codegen.display_expression(field, references) for field in spec.fields
         },
         field_value_expressions={
-            field.name: codegen.row_value_expression(spec, field, references)
+            field.name: codegen.row_value_expression(spec, field, references, list_view=True)
             for field in spec.fields
         },
         detail_value_expressions={

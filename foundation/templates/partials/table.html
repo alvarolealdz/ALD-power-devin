@@ -32,20 +32,47 @@
               <td class="cell-id">#{{ v }}</td>
             {% elif kind == "number" %}
               <td class="cell-num">{{ v|default("", true) }}</td>
+            {% elif kind == "date" %}
+              <td class="cell-date">{{ v|default("", true) }}</td>
+            {% elif kind == "toggle" %}
+              <td class="cell-toggle">
+                <form method="post" action="{{ v.action }}" class="toggle">
+                  <input type="hidden" name="next" value="{{ v.next }}">
+                  <input
+                    type="checkbox"
+                    class="switch"
+                    {% if v.checked %}checked{% endif %}
+                    {% if v.disabled %}disabled{% endif %}
+                    data-autosubmit
+                    aria-label="{{ column.label }}"
+                  >
+                </form>
+              </td>
             {% elif kind == "badge" %}
               <td>{% set badge = v %}{% include "partials/badge.html" %}</td>
             {% elif kind == "link" %}
               <td class="cell-primary"><a href="{{ v.href }}">{{ v.label }}</a></td>
+            {% elif kind == "text" %}
+              <td class="cell-text" title="{{ v }}">{{ v|default("", true) }}</td>
             {% else %}
               <td>{{ v|default("", true) }}</td>
             {% endif %}
           {% endfor %}
           {% if actions %}
             <td class="row-actions">
+              <div class="actions">
+              {% for decision in row.decisions|default([]) %}
+                <form method="post" action="{{ decision.action }}" class="inline">
+                  <input type="hidden" name="expected" value="{{ decision.expected }}">
+                  <input type="hidden" name="next" value="{{ decision.next }}">
+                  <button class="btn btn-sm tone-{{ decision.tone }}" name="{{ decision.field }}" value="{{ decision.value }}" title="Mark {{ decision.label }}">{{ decision.label|capitalize }}</button>
+                </form>
+              {% endfor %}
               {% for action in actions %}
                 {% set href = row[action.href_key] if row is mapping else row|attr(action.href_key) %}
                 <a class="btn btn-ghost btn-sm" href="{{ href }}">{{ action.label }}</a>
               {% endfor %}
+              </div>
             </td>
           {% endif %}
         </tr>
