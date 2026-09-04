@@ -1,0 +1,26 @@
+[project]
+name = "ald-power-devin"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.13.2",
+    "fastapi>=0.111.0",
+    "jinja2>=3.1.4",
+    "python-multipart>=0.0.9",
+    "sqlalchemy>=2.0.31",
+    "uvicorn[standard]>=0.30.1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27.0",
+    "pytest>=8.2.2",
+    "ruff>=0.5.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100

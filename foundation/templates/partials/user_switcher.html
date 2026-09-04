@@ -1,0 +1,11 @@
+<form class="user-switcher" action="{{ url_for('switch_user') }}" method="post">
+  <label for="user_id">Acting as</label>
+  <select id="user_id" name="user_id" onchange="this.form.requestSubmit()">
+    {% for user in users %}
+      <option value="{{ user.id }}" {% if current_user and user.id == current_user.id %}selected{% endif %}>
+        {{ user.display_name }} ({{ user.role.name }})
+      </option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">Switch</button></noscript>
+</form>

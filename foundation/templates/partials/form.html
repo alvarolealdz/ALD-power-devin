@@ -1,0 +1,36 @@
+{#
+  Generic form.
+
+  action: URL to submit to
+  method: "post" (default) or "get"
+  fields: [{"name": ..., "label": ..., "type": "text|number|date|textarea|select|checkbox",
+            "value": ..., "options": [{"value": ..., "label": ...}], "required": bool}]
+  submit_label: button text
+  errors: optional {field_name: message}
+#}
+<form class="form" action="{{ action }}" method="{{ method|default('post') }}">
+  {% for field in fields %}
+    {% set type = field.type|default("text") %}
+    <div class="field">
+      <label for="{{ field.name }}">{{ field.label|default(field.name) }}</label>
+      {% if type == "select" %}
+        <select id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %}>
+          {% for option in field.options %}
+            <option value="{{ option.value }}" {% if option.value|string == field.value|string %}selected{% endif %}>
+              {{ option.label|default(option.value) }}
+            </option>
+          {% endfor %}
+        </select>
+      {% elif type == "textarea" %}
+        <textarea id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %}>{{ field.value|default("") }}</textarea>
+      {% elif type == "checkbox" %}
+        <input id="{{ field.name }}" name="{{ field.name }}" type="checkbox" value="1" {% if field.value %}checked{% endif %} />
+      {% else %}
+        <input id="{{ field.name }}" name="{{ field.name }}" type="{{ type }}"
+               value="{{ field.value|default('', true) }}" {% if field.required %}required{% endif %} />
+      {% endif %}
+      {% if errors and errors[field.name] %}<p class="error">{{ errors[field.name] }}</p>{% endif %}
+    </div>
+  {% endfor %}
+  <button type="submit">{{ submit_label|default("Save") }}</button>
+</form>
