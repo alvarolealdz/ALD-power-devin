@@ -15,7 +15,7 @@
     <div class="field">
       <label for="{{ field.name }}">{{ field.label|default(field.name) }}</label>
       {% if type == "select" %}
-        <select id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %} {% if readonly %}disabled{% endif %}>
+        <select class="input" id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %} {% if readonly %}disabled{% endif %}>
           {% for option in field.options %}
             <option value="{{ option.value }}" {% if option.value|string == field.value|string %}selected{% endif %}>
               {{ option.label|default(option.value) }}
@@ -23,11 +23,11 @@
           {% endfor %}
         </select>
       {% elif type == "textarea" %}
-        <textarea id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %} {% if readonly %}disabled{% endif %}>{{ field.value|default("") }}</textarea>
+        <textarea class="input" id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %} {% if readonly %}disabled{% endif %}>{{ field.value|default("") }}</textarea>
       {% elif type == "checkbox" %}
-        <input id="{{ field.name }}" name="{{ field.name }}" type="checkbox" value="1" {% if field.value %}checked{% endif %} {% if readonly %}disabled{% endif %} />
+        <input class="input" id="{{ field.name }}" name="{{ field.name }}" type="checkbox" value="1" {% if field.value %}checked{% endif %} {% if readonly %}disabled{% endif %} />
       {% else %}
-        <input id="{{ field.name }}" name="{{ field.name }}" type="{{ type }}"
+        <input class="input" id="{{ field.name }}" name="{{ field.name }}" type="{{ type }}"
                value="{{ field.value|default('', true) }}"
                {% if field.step %}step="{{ field.step }}"{% endif %}
                {% if field.required %}required{% endif %}
@@ -37,6 +37,6 @@
     </div>
   {% endfor %}
   {% if not readonly %}
-    <button type="submit">{{ submit_label|default("Save", true) }}</button>
+    <button class="btn btn-primary" type="submit">{{ submit_label|default("Save", true) }}</button>
   {% endif %}
 </form>

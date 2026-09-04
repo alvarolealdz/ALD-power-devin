@@ -1,9 +1,11 @@
+from datetime import UTC, date, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from foundation import audit, auth, discovery
+from foundation import audit, auth, discovery, forms
 from foundation.app import app
 from foundation.config import CURRENT_USER_COOKIE
 from foundation.deps import CurrentUser, DbSession
@@ -60,6 +62,11 @@ def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_display_uses_human_readable_dates():
+    assert forms.display(date(2026, 9, 4)) == "4 Sep 2026"
+    assert forms.display(datetime(2026, 9, 4, 10, 30, tzinfo=UTC)) == "4 Sep 2026, 10:30"
 
 
 def test_foundation_route_names_are_reserved():

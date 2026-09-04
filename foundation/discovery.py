@@ -43,6 +43,14 @@ class DiscoveredApp:
         """What the nav calls it. Apps set ``TITLE`` in routes.py; this is the fallback."""
         return getattr(self.module("routes"), "TITLE", self.name.replace("_", " ").capitalize())
 
+    @property
+    def description(self) -> str:
+        return getattr(self.module("routes"), "DESCRIPTION", "")
+
+    @property
+    def model(self):
+        return getattr(self.module("routes"), "MODEL", None)
+
 
 def discover(apps_dir: Path = APPS_DIR) -> list[DiscoveredApp]:
     """Every importable app directory, in a stable order."""

@@ -70,6 +70,7 @@ def test_generates_a_whole_app(root, spec_path):
         "templates",
     ]
     assert sorted(path.name for path in (app_dir / "templates").iterdir()) == [
+        "detail.html",
         "form.html",
         "list.html",
     ]
@@ -137,6 +138,7 @@ def test_templates_build_on_the_foundation_partials(root, spec_path):
     templates = root / "apps" / "widgets" / "templates"
     assert '{% include "partials/table.html" %}' in (templates / "list.html").read_text()
     assert '{% include "partials/form.html" %}' in (templates / "form.html").read_text()
+    assert '{% include "partials/record.html" %}' in (templates / "detail.html").read_text()
     assert '{% extends "layout.html" %}' in (templates / "list.html").read_text()
 
 

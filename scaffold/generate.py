@@ -137,6 +137,9 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
             for field in spec.fields
             if field.is_reference
         ],
+        tone_maps={
+            field.name: repr(dict(field.tones)) for field in spec.fields if field.type == ENUM
+        },
         table_args=[
             codegen.model_check_constraint(spec, field)
             for field in spec.fields
@@ -153,6 +156,20 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
         field_display={
             field.name: codegen.display_expression(field, references) for field in spec.fields
         },
+        field_value_expressions={
+            field.name: codegen.row_value_expression(
+                spec,
+                field,
+                references,
+                link=field.name
+                == (spec.visible_fields[0].name if spec.visible_fields else spec.fields[0].name),
+            )
+            for field in spec.fields
+        },
+        detail_value_expressions={
+            field.name: codegen.row_value_expression(spec, field, references)
+            for field in spec.fields
+        },
         field_form={
             field.name: codegen.form_field_literal(field, references) for field in spec.fields
         },
@@ -161,6 +178,16 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
         reference_rows=codegen.reference_rows(spec, references),
         form_params=[codegen.form_param(field) for field in spec.fields],
         submitted_dict=codegen.submitted_dict(spec),
+        column_kinds={
+            field.name: codegen.column_kind(
+                field,
+                link=field.name
+                == (spec.visible_fields[0].name if spec.visible_fields else spec.fields[0].name),
+            )
+            for field in spec.fields
+        },
+        detail_fields=spec.visible_fields,
+        detail_sensitive_fields=spec.sensitive_fields,
     )
 
     files = {
@@ -174,6 +201,11 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
         ),
         app_dir / "templates" / "form.html": env.get_template("form.html.j2").render(
             spec=spec, header_text=header_text
+        ),
+        app_dir / "templates" / "detail.html": env.get_template("detail.html.j2").render(
+            spec=spec,
+            header_text=header_text,
+            workflow_name=spec.workflow_field.name if spec.workflow_field else "",
         ),
     }
 

@@ -7,7 +7,7 @@ the route's business.
 """
 
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -117,8 +117,10 @@ def display(value: Any) -> str:
         return ""
     if isinstance(value, bool):
         return "yes" if value else "no"
+    if isinstance(value, datetime):
+        return value.strftime("%-d %b %Y, %H:%M")
     if isinstance(value, date):
-        return value.isoformat()
+        return value.strftime("%-d %b %Y")
     return str(value)
 
 

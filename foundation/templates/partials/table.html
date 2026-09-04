@@ -3,36 +3,56 @@
 
   columns: [{"key": "id", "label": "ID"}, ...]
   rows:    list of dicts (or objects) keyed by column key
-  empty:   message shown when there are no rows
+  empty:   {"title": ..., "text": ..., "cta": ...}, or a plain title
   actions: optional [{"label": ..., "href_key": ...}] rendered per row
 #}
-<table class="table">
-  <thead>
-    <tr>
-      {% for column in columns %}<th>{{ column.label|default(column.key) }}</th>{% endfor %}
-      {% if actions %}<th></th>{% endif %}
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
+<div class="table-wrap">
+  <table class="table">
+    <thead>
       <tr>
-        {% for column in columns %}
-          <td>{{ (row[column.key] if row is mapping else row|attr(column.key))|default("", true) }}</td>
-        {% endfor %}
-        {% if actions %}
-          <td class="row-actions">
-            {% for action in actions %}
-              <a href="{{ (row[action.href_key] if row is mapping else row|attr(action.href_key)) }}">{{ action.label }}</a>
-            {% endfor %}
+        {% for column in columns %}<th>{{ column.label|default(column.key) }}</th>{% endfor %}
+        {% if actions %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          {% for column in columns %}
+            {% set v = row[column.key] if row is mapping else row|attr(column.key) %}
+            {% set kind = column.kind|default("text") %}
+            {% if kind == "id" %}
+              <td class="cell-id">#{{ v }}</td>
+            {% elif kind == "number" %}
+              <td class="cell-num">{{ v|default("", true) }}</td>
+            {% elif kind == "badge" %}
+              <td>{% set badge = v %}{% include "partials/badge.html" %}</td>
+            {% elif kind == "link" %}
+              <td class="cell-primary"><a href="{{ v.href }}">{{ v.label }}</a></td>
+            {% else %}
+              <td>{{ v|default("", true) }}</td>
+            {% endif %}
+          {% endfor %}
+          {% if actions %}
+            <td class="row-actions">
+              {% for action in actions %}
+                {% set href = row[action.href_key] if row is mapping else row|attr(action.href_key) %}
+                <a class="btn btn-ghost btn-sm" href="{{ href }}">{{ action.label }}</a>
+              {% endfor %}
+            </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        {% set empty_title = empty if empty is string else empty.title|default("Nothing here yet.") %}
+        <tr>
+          <td class="empty" colspan="{{ columns|length + (1 if actions else 0) }}">
+            <div class="empty-state">
+              <p class="empty-title">{{ empty_title }}</p>
+              {% if empty is not string and empty.text %}<p class="empty-text">{{ empty.text }}</p>{% endif %}
+              {% if empty is not string and empty.cta %}<a class="btn btn-primary" href="{{ empty.cta.href }}">{{ empty.cta.label }}</a>{% endif %}
+            </div>
           </td>
-        {% endif %}
-      </tr>
-    {% else %}
-      <tr>
-        <td class="empty" colspan="{{ columns|length + (1 if actions else 0) }}">
-          {{ empty|default("Nothing here yet.") }}
-        </td>
-      </tr>
-    {% endfor %}
-  </tbody>
-</table>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

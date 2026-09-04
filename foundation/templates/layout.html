@@ -3,8 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{% block title %}{{ title|default("Foundation") }}{% endblock %}</title>
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <title>{% block title %}{% if title %}{{ title }} · Foundation{% else %}Foundation{% endif %}{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}" />
   </head>
   <body>
@@ -12,12 +11,12 @@
       <a class="brand" href="{{ url_for('index') }}">{{ brand|default("Foundation") }}</a>
       <nav class="nav">
         {% for entry in nav_apps|default([]) %}
-          <a href="{{ entry.path }}">{{ entry.title }}</a>
+          <a class="{% if request.url.path.startswith(entry.path) %}active{% endif %}" href="{{ entry.path }}">{{ entry.title }}</a>
         {% endfor %}
       </nav>
       {% include "partials/user_switcher.html" %}
     </header>
-    <main>
+    <main class="page">
       {% block content %}{% endblock %}
     </main>
   </body>

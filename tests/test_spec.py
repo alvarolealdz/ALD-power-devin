@@ -30,6 +30,59 @@ def test_sensitive_fields_are_split_out():
     assert [field.name for field in spec.sensitive_fields] == ["note"]
 
 
+def test_description_workflow_tones_and_samples_are_parsed():
+    spec = parse(
+        {
+            **MINIMAL,
+            "description": "  A useful description.  ",
+            "fields": [
+                {"name": "label", "type": "text", "sample": ["One", "Two"]},
+                {
+                    "name": "status",
+                    "type": "enum",
+                    "options": ["draft", "done"],
+                    "workflow": True,
+                    "tones": {"done": "success"},
+                },
+            ],
+        }
+    )
+    assert spec.description == "A useful description."
+    assert spec.workflow_field is spec.fields[1]
+    assert spec.fields[1].tone("done") == "success"
+    assert spec.fields[1].tone("draft") == "neutral"
+    assert spec.fields[0].sample == ("One", "Two")
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        (
+            {"name": "status", "type": "enum", "options": ["draft"], "tones": {"draft": "bad"}},
+            "tone",
+        ),
+        ({"name": "label", "type": "text", "workflow": True}, "workflow"),
+        ({"name": "label", "type": "text", "sample": "unknown"}, "sample"),
+    ],
+)
+def test_new_field_options_are_validated(field, message):
+    with pytest.raises(SpecError, match=message):
+        parse({**MINIMAL, "fields": [field]})
+
+
+def test_two_workflow_fields_are_rejected():
+    with pytest.raises(SpecError, match="at most one"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {"name": "first", "type": "enum", "options": ["a"], "workflow": True},
+                    {"name": "second", "type": "enum", "options": ["b"], "workflow": True},
+                ],
+            }
+        )
+
+
 @pytest.mark.parametrize(
     ("raw", "message"),
     [

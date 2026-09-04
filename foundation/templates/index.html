@@ -8,13 +8,36 @@
     {% if current_user %}<span class="role">{{ current_user.role.name }}</span>{% endif %}
   </p>
 
-  <h2>Users</h2>
-  {% with columns = user_columns, rows = user_rows, empty = "No users." %}
-    {% include "partials/table.html" %}
-  {% endwith %}
+  <section class="apps-grid">
+    {% for item in apps %}
+      <a class="app-card" href="{{ item.path }}">
+        <h2>{{ item.title }}</h2>
+        <p class="muted">{{ item.description }}</p>
+        <p class="app-count">{{ item.count }} records</p>
+      </a>
+    {% endfor %}
+  </section>
 
-  <h2>Recent audit entries</h2>
-  {% with columns = audit_columns, rows = audit_rows, empty = "No writes yet." %}
-    {% include "partials/table.html" %}
-  {% endwith %}
+  <section class="activity">
+    <h2>Recent activity across apps</h2>
+    <ul class="feed">
+      {% for item in feed %}
+        <li class="feed-item">
+          <div class="feed-head">
+            <span class="feed-actor">{{ item.actor }}</span>
+            <span class="feed-verb">{{ item.verb }}</span>
+            {% if item.href %}<a class="feed-target" href="{{ item.href }}">{{ item.target }}</a>{% else %}<span class="feed-target">{{ item.target }}</span>{% endif %}
+            <time>{{ item.when }}</time>
+          </div>
+          <ul class="changes">
+            {% for change in item.changes %}
+              <li><span class="chg-field">{{ change.field }}</span> <span class="chg-old">{{ change.before }}</span> → <span class="chg-new">{{ change.after }}</span></li>
+            {% endfor %}
+          </ul>
+        </li>
+      {% else %}
+        <li class="muted">No recent activity.</li>
+      {% endfor %}
+    </ul>
+  </section>
 {% endblock %}

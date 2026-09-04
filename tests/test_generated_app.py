@@ -118,6 +118,40 @@ def test_admin_sees_sensitive_values(client, widget):
     assert "Internal note" in client.get("/widgets/1").text
 
 
+def test_detail_and_workflow_decision_are_role_aware(client, session, editor, viewer, widget):
+    detail = client.get("/widgets/1")
+    assert detail.status_code == 200
+    assert "Decision" in detail.text
+    assert "Mark Review" in detail.text
+
+    as_user(client, viewer)
+    viewer_detail = client.get("/widgets/1")
+    assert viewer_detail.status_code == 200
+    assert "Decision" not in viewer_detail.text
+
+    as_user(client, editor)
+    decision = client.post("/widgets/1/status", data={"status": "done"}, follow_redirects=False)
+    assert decision.status_code == 303
+    assert session.scalars(select(Widget)).one().status == "done"
+    update = audit_rows(session)[-1]
+    assert update.action == AuditLog.ACTION_UPDATE
+    assert update.after["status"] == "done"
+
+    invalid = client.post("/widgets/1/status", data={"status": "unknown"})
+    assert invalid.status_code == 400
+
+
+def test_activity_feed_renders_workflow_changes_for_non_admins(client, editor, widget):
+    as_user(client, editor)
+    client.post("/widgets/1/status", data={"status": "done"})
+
+    home = client.get("/")
+    assert "Status" in home.text
+    assert "draft" in home.text
+    assert "done" in home.text
+    assert "confidential" not in home.text
+
+
 def test_a_non_admin_never_sees_a_sensitive_field(client, editor, widget):
     as_user(client, editor)
 
@@ -186,7 +220,7 @@ def test_a_viewer_is_offered_no_way_to_write(client, viewer, editor, widget):
     as_user(client, viewer)
 
     assert "New widget" not in client.get("/widgets").text
-    form = client.get("/widgets/1").text
+    form = client.get("/widgets/1/edit").text
     assert ">Save<" not in form
     assert ">Delete<" not in form
     controls = re.findall(r"<(?:input|select|textarea)\b[^>]*>", form)
@@ -194,7 +228,7 @@ def test_a_viewer_is_offered_no_way_to_write(client, viewer, editor, widget):
     assert editable and all("disabled" in tag for tag in editable)
 
     as_user(client, editor)
-    form = client.get("/widgets/1").text
+    form = client.get("/widgets/1/edit").text
     assert "disabled" not in form.split('<form class="form"')[1]
 
 

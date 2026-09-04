@@ -16,6 +16,8 @@ from foundation.templating import templates
 [% endfor %]
 
 TITLE = "[[ spec.title ]]"
+DESCRIPTION = "[[ spec.description|replace('\\', '\\\\')|replace('"', '\\"') ]]"
+MODEL = [[ spec.class_name ]]
 
 router = APIRouter(prefix="[[ spec.mount_path ]]", tags=["[[ spec.app ]]"])
 
@@ -29,34 +31,53 @@ def _get(session: Session, [[ spec.entity ]]_id: int) -> [[ spec.class_name ]]:
 
 def _columns(admin: bool) -> list[dict[str, str]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
-    columns = [{"key": "id", "label": "ID"}]
+    columns = []
 [% for field in visible_fields %]
-    columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]"})
+    columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": "[[ column_kinds[field.name] ]]"})
 [% endfor %]
 [% if spec.sensitive_fields %]
     if admin:
 [% for field in spec.sensitive_fields %]
-        columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]"})
+        columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": "[[ column_kinds[field.name] ]]"})
 [% endfor %]
 [% endif %]
+    columns.append({"key": "id", "label": "ID", "kind": "id"})
     return columns
 
 
 def _row(request: Request, row: [[ spec.class_name ]], admin: bool) -> dict[str, object]:
     data: dict[str, object] = {
-        "id": row.id,
 [% for field in visible_fields %]
-        "[[ field.name ]]": forms.display([[ field_display[field.name] ]]),
+        "[[ field.name ]]": [[ field_value_expressions[field.name] ]],
 [% endfor %]
         "edit_url": str(request.url_for("[[ spec.app ]]_edit", [[ spec.entity ]]_id=row.id)),
     }
 [% if spec.sensitive_fields %]
     if admin:
 [% for field in spec.sensitive_fields %]
-        data["[[ field.name ]]"] = forms.display([[ field_display[field.name] ]])
+        data["[[ field.name ]]"] = [[ field_value_expressions[field.name] ]]
 [% endfor %]
 [% endif %]
     return data
+
+
+def _items(row: [[ spec.class_name ]], admin: bool) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = [
+[% for field in visible_fields %]
+        {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]},
+[% endfor %]
+    ]
+[% if spec.sensitive_fields %]
+    if admin:
+        items.extend(
+            [
+[% for field in spec.sensitive_fields %]
+                {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]},
+[% endfor %]
+            ]
+        )
+[% endif %]
+    return items
 
 
 def _fields(
@@ -127,6 +148,7 @@ def _form_page(
     heading: str,
     writable: bool = True,
     delete_url: str | None = None,
+    detail_url: str | None = None,
     status_code: int = 200,
 ):
     return templates.TemplateResponse(
@@ -141,6 +163,7 @@ def _form_page(
             "submit_label": "Save" if writable else None,
             "list_url": str(request.url_for("[[ spec.app ]]_list")),
             "delete_url": delete_url if writable else None,
+            "detail_url": detail_url,
         },
         status_code=status_code,
     )
@@ -150,6 +173,15 @@ def _form_page(
 def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
     admin = auth.is_admin(current_user)
     rows = session.scalars(select([[ spec.class_name ]]).order_by([[ spec.class_name ]].id.desc())).all()
+    new_url = (
+        str(request.url_for("[[ spec.app ]]_new"))
+[% if spec.create_is_admin_only %]
+        if auth.is_admin(current_user)
+[% else %]
+        if auth.can_write(current_user)
+[% endif %]
+        else None
+    )
     return templates.TemplateResponse(
         request,
         "[[ spec.app ]]/list.html",
@@ -158,16 +190,15 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "columns": _columns(admin),
             "rows": [_row(request, row, admin) for row in rows],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
-            "empty": "No [[ spec.title|lower ]] yet.",
-            "new_url": (
-                str(request.url_for("[[ spec.app ]]_new"))
-[% if spec.create_is_admin_only %]
-                if auth.is_admin(current_user)
-[% else %]
-                if auth.can_write(current_user)
-[% endif %]
-                else None
-            ),
+            "description": DESCRIPTION,
+            "empty": {
+                "title": "No [[ spec.title|lower ]] yet",
+                "text": DESCRIPTION or None,
+                "cta": {"label": "New [[ spec.singular_title|lower ]]", "href": new_url}
+                if new_url
+                else None,
+            },
+            "new_url": new_url,
         },
     )
 
@@ -223,10 +254,76 @@ def create_row(
         )
     row = [[ spec.class_name ]](**values)
     audit.insert(session, row)
-    return RedirectResponse(request.url_for("[[ spec.app ]]_list"), status_code=303)
+    return RedirectResponse(request.url_for("[[ spec.app ]]_detail", [[ spec.entity ]]_id=row.id), status_code=303)
 
 
-@router.get("/{[[ spec.entity ]]_id}", name="[[ spec.app ]]_edit")
+@router.get("/{[[ spec.entity ]]_id}", name="[[ spec.app ]]_detail")
+def detail_row(
+    request: Request, session: DbSession, current_user: CurrentUser, [[ spec.entity ]]_id: int
+):
+    row = _get(session, [[ spec.entity ]]_id)
+    admin = auth.is_admin(current_user)
+[% if spec.workflow_field %]
+    current_value = row.[[ spec.workflow_field.name ]]
+    current = {
+        "label": current_value,
+        "tone": [[ spec.workflow_field.name|upper ]]_TONES.get(current_value, "neutral"),
+    }
+    decisions = [
+        {"label": option.title(), "value": option, "tone": [[ spec.workflow_field.name|upper ]]_TONES.get(option, "neutral")}
+        for option in [[ spec.workflow_field.name|upper ]]_OPTIONS
+        if option != current_value
+    ]
+[% endif %]
+    return templates.TemplateResponse(
+        request,
+        "[[ spec.app ]]/detail.html",
+        {
+            "title": "[[ spec.singular_title ]] {}".format(row.id),
+            "row_id": row.id,
+            "items": _items(row, admin),
+            "list_url": str(request.url_for("[[ spec.app ]]_list")),
+            "edit_url": (
+                str(request.url_for("[[ spec.app ]]_edit", [[ spec.entity ]]_id=row.id))
+                if auth.can_write(current_user)
+                else None
+            ),
+            "delete_url": (
+                str(request.url_for("[[ spec.app ]]_delete", [[ spec.entity ]]_id=row.id))
+                if auth.can_write(current_user)
+                else None
+            ),
+[% if spec.workflow_field %]
+            "current": current,
+            "decisions": decisions,
+            "decision_url": str(request.url_for("[[ spec.app ]]_decide", [[ spec.entity ]]_id=row.id)),
+            "can_decide": auth.can_write(current_user),
+[% endif %]
+        },
+    )
+
+
+[% if spec.workflow_field %]
+@router.post("/{[[ spec.entity ]]_id}/status", name="[[ spec.app ]]_decide")
+def decide_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    [[ spec.entity ]]_id: int,
+    [[ spec.workflow_field.name ]]: Annotated[str, Form()] = "",
+):
+    auth.require_write(current_user)
+    row = _get(session, [[ spec.entity ]]_id)
+    if [[ spec.workflow_field.name ]] not in [[ spec.workflow_field.name|upper ]]_OPTIONS:
+        raise HTTPException(status_code=400, detail="invalid status")
+    audit.update(session, row, {"[[ spec.workflow_field.name ]]": [[ spec.workflow_field.name ]]})
+    return RedirectResponse(
+        request.url_for("[[ spec.app ]]_detail", [[ spec.entity ]]_id=row.id), status_code=303
+    )
+
+
+[% endif %]
+@router.get("/{[[ spec.entity ]]_id}/edit", name="[[ spec.app ]]_edit")
 def edit_row(
     request: Request, session: DbSession, current_user: CurrentUser, [[ spec.entity ]]_id: int
 ):
@@ -240,9 +337,10 @@ def edit_row(
         {},
         admin,
         action=str(request.url_for("[[ spec.app ]]_update", [[ spec.entity ]]_id=row.id)),
-        heading="[[ spec.singular_title ]] {}".format(row.id),
+        heading="Edit [[ spec.singular_title ]] {}".format(row.id),
         writable=auth.can_write(current_user),
         delete_url=str(request.url_for("[[ spec.app ]]_delete", [[ spec.entity ]]_id=row.id)),
+        detail_url=str(request.url_for("[[ spec.app ]]_detail", [[ spec.entity ]]_id=row.id)),
     )
 
 
@@ -271,12 +369,13 @@ def update_row(
             errors,
             admin,
             action=str(request.url_for("[[ spec.app ]]_update", [[ spec.entity ]]_id=row.id)),
-            heading="[[ spec.singular_title ]] {}".format(row.id),
+            heading="Edit [[ spec.singular_title ]] {}".format(row.id),
             delete_url=str(request.url_for("[[ spec.app ]]_delete", [[ spec.entity ]]_id=row.id)),
+            detail_url=str(request.url_for("[[ spec.app ]]_detail", [[ spec.entity ]]_id=row.id)),
             status_code=400,
         )
     audit.update(session, row, values)
-    return RedirectResponse(request.url_for("[[ spec.app ]]_list"), status_code=303)
+    return RedirectResponse(request.url_for("[[ spec.app ]]_detail", [[ spec.entity ]]_id=row.id), status_code=303)
 
 
 @router.post("/{[[ spec.entity ]]_id}/delete", name="[[ spec.app ]]_delete")
