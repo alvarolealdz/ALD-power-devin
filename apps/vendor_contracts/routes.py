@@ -379,8 +379,11 @@ def list_rows(
     normalized_dir = dir if dir in {"asc", "desc"} else "asc"
     query = select(MODEL)
     if q and searchable:
-        pattern = f"%{q}%"
-        query = query.where(or_(*(getattr(MODEL, column).ilike(pattern) for column in searchable)))
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        query = query.where(
+            or_(*(getattr(MODEL, column).ilike(pattern, escape="\\") for column in searchable))
+        )
     workflow_column = getattr(MODEL, WORKFLOW_FIELD)
     grouped = dict(
         session.execute(select(workflow_column, func.count()).group_by(workflow_column)).all()

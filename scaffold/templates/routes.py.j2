@@ -287,9 +287,10 @@ def list_rows(
     normalized_dir = dir if dir in {"asc", "desc"} else "asc"
     query = select(MODEL)
     if q and searchable:
-        pattern = f"%{q}%"
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         query = query.where(
-            or_(*(getattr(MODEL, column).ilike(pattern) for column in searchable))
+            or_(*(getattr(MODEL, column).ilike(pattern, escape="\\") for column in searchable))
         )
 [% if spec.workflow_field %]
     workflow_column = getattr(MODEL, WORKFLOW_FIELD)

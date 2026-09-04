@@ -162,3 +162,16 @@ def test_html_errors_render_friendly_pages(client, session, seeded):
     )
     assert forbidden.status_code == 403
     assert "Not allowed" in forbidden.text
+
+
+def test_validation_errors_keep_json_422_for_api_clients(client):
+    api_response = client.get("/widgets/not-an-id")
+    assert api_response.status_code == 422
+    assert api_response.json()["detail"]
+
+    html_response = client.get(
+        "/widgets/not-an-id",
+        headers={"accept": "text/html"},
+    )
+    assert html_response.status_code == 400
+    assert "Something went wrong" in html_response.text

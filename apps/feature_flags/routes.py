@@ -291,8 +291,11 @@ def list_rows(
     normalized_dir = dir if dir in {"asc", "desc"} else "asc"
     query = select(MODEL)
     if q and searchable:
-        pattern = f"%{q}%"
-        query = query.where(or_(*(getattr(MODEL, column).ilike(pattern) for column in searchable)))
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        query = query.where(
+            or_(*(getattr(MODEL, column).ilike(pattern, escape="\\") for column in searchable))
+        )
     state = None
     if normalized_sort:
         sort_column = getattr(MODEL, normalized_sort)

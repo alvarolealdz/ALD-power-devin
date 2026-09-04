@@ -69,7 +69,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     detail = exc.errors()
     if not _accepts_html(request):
-        return JSONResponse({"detail": detail}, status_code=400)
+        return JSONResponse({"detail": detail}, status_code=422)
     return templates.TemplateResponse(
         request,
         "error.html",

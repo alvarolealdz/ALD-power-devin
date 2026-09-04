@@ -13,7 +13,10 @@ swapping `foundation/auth.py` and nothing else.
 ## Concurrent edits: optimistic, not locked
 
 Decisions carry the status the reviewer was shown and are rejected (409) if
-the record has moved since. The generic edit form has no such guard: two
+the record has already moved — this catches the realistic case of a page left
+open for minutes, not two submits within the same few milliseconds, where both
+requests read the old state before either writes. The generic edit form has no
+such guard: two
 people saving the same record at once means the second save wins, field by
 field, and the audit trail shows both writes truthfully. A `version` column
 with a conditional `UPDATE` is the proper fix and is worth doing when this

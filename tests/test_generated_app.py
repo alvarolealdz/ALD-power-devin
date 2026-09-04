@@ -586,7 +586,7 @@ def test_kyc_decision_rejects_stale_expected_state(client, session, editor, seed
 
 
 def test_kyc_search_and_sort_respect_visibility(client, session, editor, seeded):
-    def create_review(reference, customer, risk):
+    def create_review(reference, customer, risk, notes="Queue note"):
         response = client.post(
             "/kyc-queue",
             data={
@@ -596,7 +596,7 @@ def test_kyc_search_and_sort_respect_visibility(client, session, editor, seeded)
                 "status": "pending",
                 "submitted_on": "2026-01-01",
                 "reviewer_id": str(seeded.id),
-                "notes": "Queue note",
+                "notes": notes,
             },
             follow_redirects=False,
         )
@@ -604,6 +604,8 @@ def test_kyc_search_and_sort_respect_visibility(client, session, editor, seeded)
 
     create_review("CUS-006", "Ada Lovelace", 10)
     create_review("CUS-007", "Grace Hopper", 90)
+    create_review("CUS-008", "Percent Case", 20, "100% done")
+    create_review("CUS-009", "Plain Case", 30, "100 done")
 
     admin_search = client.get("/kyc-queue?q=Ada")
     assert admin_search.status_code == 200
@@ -614,6 +616,16 @@ def test_kyc_search_and_sort_respect_visibility(client, session, editor, seeded)
     editor_search = client.get("/kyc-queue?q=Ada")
     assert editor_search.status_code == 200
     assert 'class="cell-id"' not in editor_search.text
+
+    as_user(client, seeded)
+    percent_search = client.get("/kyc-queue?q=100%")
+    assert percent_search.status_code == 200
+    assert "Percent Case" in percent_search.text
+    assert "Plain Case" not in percent_search.text
+    underscore_search = client.get("/kyc-queue?q=_")
+    assert underscore_search.status_code == 200
+    assert "Percent Case" not in underscore_search.text
+    assert "Plain Case" not in underscore_search.text
 
     as_user(client, seeded)
     sorted_rows = client.get("/kyc-queue?sort=risk_score&dir=desc")
