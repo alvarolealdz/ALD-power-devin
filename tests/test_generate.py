@@ -88,6 +88,30 @@ def test_generated_code_is_normal_code(root, spec_path):
     assert "audit.delete(session, row)" in routes
 
 
+def test_renaming_the_entity_is_refused(root, spec_path):
+    generate.generate(spec_path, root=root)
+    spec_path.write_text(SPEC.replace("entity: widget", "app: widgets\nentity: gadget"))
+
+    with pytest.raises(SpecError, match="hand-written migration"):
+        generate.generate(spec_path, root=root)
+
+    assert len(list((root / "migrations" / "versions").glob("*_create_widgets.py"))) == 1
+    model_path = root / "apps" / "widgets" / "model.py"
+    assert model_path.exists()
+    assert "gadget" not in model_path.read_text()
+
+
+def test_two_apps_cannot_claim_one_table(root, spec_path):
+    generate.generate(spec_path, root=root)
+    other = root / "specs" / "other.yaml"
+    other.write_text("app: other\nentity: widget\nfields:\n  - name: label\n    type: text\n")
+
+    with pytest.raises(SpecError, match="already"):
+        generate.generate(other, root=root)
+
+    assert not (root / "apps" / "other").exists()
+
+
 def test_routes_never_write_through_the_session(root, spec_path):
     generate.generate(spec_path, root=root)
     routes = (root / "apps" / "widgets" / "routes.py").read_text()

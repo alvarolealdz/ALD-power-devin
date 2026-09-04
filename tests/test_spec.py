@@ -37,8 +37,15 @@ def test_sensitive_fields_are_split_out():
         ({**MINIMAL, "entity": "Widget"}, "snake_case"),
         ({**MINIMAL, "fields": []}, "non-empty"),
         ({**MINIMAL, "fields": [{"name": "id", "type": "text"}]}, "provided by the generator"),
+        ({**MINIMAL, "fields": [{"name": "metadata", "type": "text"}]}, "reserved"),
+        ({**MINIMAL, "app": "health"}, "shadow"),
+        ({**MINIMAL, "entity": "user"}, "belongs to foundation"),
         ({**MINIMAL, "fields": [{"name": "a", "type": "blob"}]}, "type must be one of"),
         ({**MINIMAL, "fields": [{"name": "a", "type": "enum"}]}, "options list"),
+        (
+            {**MINIMAL, "fields": [{"name": "a", "type": "enum", "options": [" draft"]}]},
+            "surrounding whitespace",
+        ),
         ({**MINIMAL, "fields": [{"name": "a", "type": "fk"}]}, "target"),
         (
             {**MINIMAL, "fields": [{"name": "a", "type": "text", "options": ["x"]}]},

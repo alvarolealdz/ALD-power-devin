@@ -42,7 +42,9 @@ FIELD_TYPES = (TEXT, NUMBER, DATE, BOOL, ENUM, FK)
 ENUM_LENGTH = 64
 
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
-_RESERVED_FIELD_NAMES = frozenset({"id", "created_at", "updated_at"})
+_RESERVED_FIELD_NAMES = frozenset({"id", "created_at", "updated_at", "metadata", "registry"})
+_RESERVED_APP_NAMES = frozenset({"health", "static", "switch_user", "switch-user"})
+_FOUNDATION_TABLES = frozenset({"user", "role", "audit_log"})
 _FIELD_KEYS = frozenset({"name", "type", "label", "required", "sensitive", "options", "target"})
 _SPEC_KEYS = frozenset({"app", "entity", "title", "fields"})
 
@@ -119,7 +121,11 @@ def load(path: str | Path) -> Spec:
 def parse(raw: dict[str, Any]) -> Spec:
     _reject_unknown_keys(raw, _SPEC_KEYS, "spec")
     entity = _identifier(raw.get("entity"), "entity")
+    if entity in _FOUNDATION_TABLES:
+        raise SpecError(f"table {entity!r} belongs to foundation")
     app = _identifier(raw.get("app") or _pluralise(entity), "app")
+    if app in _RESERVED_APP_NAMES:
+        raise SpecError(f"app {app!r} would shadow a foundation route")
     title = str(raw.get("title") or _humanise(app))
 
     raw_fields = raw.get("fields")
@@ -139,6 +145,10 @@ def _parse_field(raw: Any, index: int) -> Field:
 
     name = _identifier(raw.get("name"), f"{where}.name")
     if name in _RESERVED_FIELD_NAMES:
+        if name in {"metadata", "registry"}:
+            raise SpecError(
+                f"{where}: {name!r} is reserved (it already means something on the model)"
+            )
         raise SpecError(f"{where}: {name!r} is provided by the generator, drop it from the spec")
 
     field_type = raw.get("type")
@@ -190,6 +200,11 @@ def _parse_options(raw: dict[str, Any], where: str, field_type: str) -> tuple[st
     if len(set(values)) != len(values):
         raise SpecError(f"{where}: duplicate enum options")
     for value in values:
+        if value != value.strip():
+            raise SpecError(
+                f"{where}: enum option {value!r} has surrounding whitespace, "
+                "which the form strips before validating"
+            )
         if not value.strip():
             raise SpecError(f"{where}: enum options cannot be blank")
         if len(value) > ENUM_LENGTH:

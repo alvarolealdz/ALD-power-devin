@@ -89,6 +89,27 @@ def build_env() -> Environment:
 def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
     """Every file this spec produces, as path -> contents. No disk writes."""
     apps_dir = root / APPS_DIR.name
+    other_model = codegen._find_app_model(spec.table_name, apps_dir)
+    expected_module = f"{apps_dir.name}.{spec.app}.model"
+    if other_model is not None and other_model.module != expected_module:
+        other_app = other_model.module.split(".")[-2]
+        raise SpecError(f"table {spec.table_name!r} already belongs to app {other_app!r}")
+
+    revision = _revision_id(spec.app)
+    migration_path = _migration_for_revision(root, revision)
+    if migration_path is not None:
+        migration_source = migration_path.read_text()
+        if f'op.create_table(\n        "{spec.table_name}"' not in migration_source:
+            raise SpecError(
+                f"app {spec.app!r} already has migration {migration_path.name} creating a "
+                "different table; renaming an entity needs a hand-written migration"
+            )
+    elif (migration_path := _migration_creating(root, spec.table_name)) is not None:
+        raise SpecError(
+            f"table {spec.table_name!r} is already created by {migration_path.name}; "
+            "pick another entity name"
+        )
+
     references = codegen.references_for(spec, apps_dir)
     env = build_env()
     app_dir = apps_dir / spec.app
@@ -148,9 +169,7 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
         ),
     }
 
-    migration_path = _existing_migration(spec, root)
     if migration_path is None:
-        revision = _revision_id(spec.app)
         down = _current_head(root)
         files[_migration_path(spec, root, revision)] = _tidy(
             env.get_template("migration.py.j2").render(
@@ -190,10 +209,11 @@ def generate(spec_path: Path, *, root: Path | None = None, force: bool = False) 
             recorded[key] = _digest(content)
         result.add(path, outcome)
 
-    if _existing_migration(spec, root) is not None and not any(
+    migration_path = _migration_for_revision(root, _revision_id(spec.app))
+    if migration_path is not None and not any(
         "migrations" in _relative(path, root) for path in files
     ):
-        result.add(_existing_migration(spec, root), KEPT_MIGRATION)
+        result.add(migration_path, KEPT_MIGRATION)
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
@@ -278,12 +298,22 @@ def _migration_path(spec: Spec, root: Path, revision: str) -> Path:
     return root / MIGRATIONS_DIR.name / "versions" / f"{revision}_create_{spec.app}.py"
 
 
-def _existing_migration(spec: Spec, root: Path) -> Path | None:
+def _migration_for_revision(root: Path, revision: str) -> Path | None:
     versions = root / MIGRATIONS_DIR.name / "versions"
     if not versions.is_dir():
         return None
     for path in sorted(versions.glob("*.py")):
-        if f'op.create_table(\n        "{spec.table_name}"' in path.read_text():
+        if revision in _revision_ids(path.read_text(), "revision"):
+            return path
+    return None
+
+
+def _migration_creating(root: Path, table: str) -> Path | None:
+    versions = root / MIGRATIONS_DIR.name / "versions"
+    if not versions.is_dir():
+        return None
+    for path in sorted(versions.glob("*.py")):
+        if f'op.create_table(\n        "{table}"' in path.read_text():
             return path
     return None
 

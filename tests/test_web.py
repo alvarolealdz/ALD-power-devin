@@ -3,11 +3,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from foundation import audit, auth
+from foundation import audit, auth, discovery
 from foundation.app import app
 from foundation.config import CURRENT_USER_COOKIE
 from foundation.deps import CurrentUser, DbSession
 from foundation.models import ROLE_VIEWER, AuditLog, Role, User
+from scaffold import spec as scaffold_spec
 
 
 @pytest.fixture()
@@ -59,6 +60,29 @@ def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_foundation_route_names_are_reserved():
+    discovered = [item.name for item in discovery.discover()]
+    segments = {
+        path.strip("/").split("/")[0]
+        for route in app.routes
+        if (path := getattr(route, "path", None))
+        and (
+            route.__class__.__name__ == "Mount"
+            or getattr(getattr(route, "endpoint", None), "__module__", None) == "foundation.app"
+        )
+        and path.strip("/")
+        and not path.strip("/").split("/")[0].startswith("{")
+    }
+
+    for segment in segments:
+        if segment in discovered:
+            continue
+        assert (
+            segment in scaffold_spec._RESERVED_APP_NAMES
+            or segment.replace("-", "_") in scaffold_spec._RESERVED_APP_NAMES
+        )
 
 
 def test_index_shows_seeded_admin(client, seeded):
