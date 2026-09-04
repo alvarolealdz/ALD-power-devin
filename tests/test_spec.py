@@ -119,7 +119,7 @@ def test_unit_field_must_be_text_or_enum_and_exist():
         {"max": 9},
         {"min": 9, "max": 4},
         {"min": "low", "max": 4},
-        {"min": "100000000000000", "max": "100000000000001"},
+        {"min": "99999999999999.5", "max": "100000000000000"},
     ],
 )
 def test_number_sample_ranges_are_validated(sample):

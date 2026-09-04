@@ -471,7 +471,7 @@ def _parse_sample(
             raise SpecError(f"{where}: number sample min and max must be numeric") from error
         if not minimum.is_finite() or not maximum.is_finite() or minimum >= maximum:
             raise SpecError(f"{where}: number sample min must be less than max")
-        if abs(minimum) >= Decimal(10**14) or abs(maximum) >= Decimal(10**14):
+        if abs(minimum) > Decimal(10**14 - 1) or abs(maximum) > Decimal(10**14 - 1):
             raise SpecError(f"{where}: number sample bounds must fit Numeric(18, 4)")
         return {"min": minimum, "max": maximum}
     if not isinstance(sample, list):
