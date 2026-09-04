@@ -306,9 +306,7 @@ def test_the_spec_alone_reproduces_the_committed_app(tmp_path, app):
     for other in (repo / "apps").iterdir():
         if other.is_dir() and other.name != app and not other.name.startswith("_"):
             (root / "apps" / other.name).mkdir()
-            (root / "apps" / other.name / "model.py").write_text(
-                (other / "model.py").read_text()
-            )
+            (root / "apps" / other.name / "model.py").write_text((other / "model.py").read_text())
     spec_path = root / "specs" / f"{app}.yaml"
     spec_path.write_text((repo / "specs" / f"{app}.yaml").read_text())
 
