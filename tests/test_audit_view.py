@@ -1,4 +1,4 @@
-from foundation.audit_view import changes, sensitive_columns, summary
+from foundation.audit_view import _foreign_key_value, changes, sensitive_columns, summary
 from foundation.models import AuditLog
 
 
@@ -28,9 +28,9 @@ def test_changes_render_each_action_and_hide_sensitive_columns():
     )
 
     assert sensitive_columns("widget") == frozenset({"internal_note"})
-    assert [change.field for change in changes(inserted, admin=False)] == ["Label"]
+    assert changes(inserted, admin=False) == []
     assert changes(updated, admin=False)[0].after == "Beta"
-    assert [change.field for change in changes(deleted, admin=False)] == ["Label"]
+    assert changes(deleted, admin=False) == []
     assert summary(inserted) == "created"
     assert summary(updated) == "updated 2 fields"
     assert summary(deleted) == "deleted"
@@ -57,3 +57,8 @@ def test_changes_format_dates_and_foreign_keys(session, seeded):
         ("Submitted on", "1 Jan 2026", "2 Jan 2026"),
         ("Reviewer", "", "Admin"),
     ]
+
+
+def test_foreign_key_resolution_is_scoped_to_the_source_table(session, seeded):
+    assert _foreign_key_value("kyc_review", "reviewer_id", seeded.id, session) == "Admin"
+    assert _foreign_key_value("widget", "reviewer_id", seeded.id, session) == f"#{seeded.id}"

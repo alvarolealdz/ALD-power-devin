@@ -14,7 +14,7 @@ from foundation.templating import refresh_loader, templates
 
 STATIC_DIR = TEMPLATES_DIR.parent / "static"
 
-app = FastAPI(title="Foundation")
+app = FastAPI(title="PowerDevin")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
@@ -73,21 +73,22 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
     for entry in entries:
         href = None
         target_label = entry.table_name.replace("_", " ").capitalize()
-        for item in mounted:
-            model = item.model
-            if model is None or model.__tablename__ != entry.table_name:
-                continue
-            target_label = item.singular
-            try:
-                href = str(
-                    request.url_for(
-                        f"{item.name}_detail",
-                        **{f"{model.__tablename__}_id": entry.row_id},
+        if entry.action != AuditLog.ACTION_DELETE:
+            for item in mounted:
+                model = item.model
+                if model is None or model.__tablename__ != entry.table_name:
+                    continue
+                target_label = item.singular
+                try:
+                    href = str(
+                        request.url_for(
+                            f"{item.name}_detail",
+                            **{f"{model.__tablename__}_id": entry.row_id},
+                        )
                     )
-                )
-            except NoMatchFound:
-                pass
-            break
+                except NoMatchFound:
+                    pass
+                break
         feed.append(
             {
                 "actor": entry.actor_label,

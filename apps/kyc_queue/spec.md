@@ -16,7 +16,9 @@ with no hand-written code. The request:
 - notes — free text
 
 Everyone else (editors, viewers) sees the queue without the customer name
-and ref. Editors can create and change reviews; viewers only read. Every
+and ref. Only admins can create reviews (the customer fields are required and
+admin-only); editors can change everything else and record decisions; viewers
+only read. Every
 write lands in the audit trail through `foundation.audit`, same as any other
 app.
 

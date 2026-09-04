@@ -1,4 +1,4 @@
-# ALD-power-devin
+# PowerDevin
 
 Two layers: `foundation/` — identity, roles, an audit trail no write can escape,
 base Jinja templates — and `apps/`, generated on top of it by

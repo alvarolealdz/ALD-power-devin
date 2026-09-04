@@ -356,6 +356,8 @@ def _parse_sample(raw: dict[str, Any], where: str, field_type: str) -> str | tup
         raise SpecError(f"{where}: sample must be a kind or a list of strings")
     if field_type not in (TEXT, NUMBER, DATE):
         raise SpecError(f"{where}: sample lists only apply to text, number, or date fields")
+    if not sample:
+        raise SpecError(f"{where}: sample list cannot be empty")
     if len(sample) > 50:
         raise SpecError(f"{where}: sample list cannot contain more than 50 items")
     values = []

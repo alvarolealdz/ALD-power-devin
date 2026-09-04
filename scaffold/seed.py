@@ -4,7 +4,7 @@ import argparse
 import importlib
 import random
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -110,28 +110,41 @@ WORDS = (
 )
 
 
-def seed(spec_path: Path, rows: int, seed: int, append: bool) -> int:
+def seed(
+    spec_path: Path,
+    rows: int,
+    seed: int,
+    append: bool,
+    today: date | None = None,
+) -> int:
     spec = load(spec_path)
     module = importlib.import_module(f"apps.{spec.app}.model")
     model = getattr(module, spec.class_name)
+    today = today or datetime.now(UTC).date()
     with SessionFactory() as session:
         existing = session.scalar(select(func.count()).select_from(model)) or 0
         if existing and not append:
             raise ValueError(f"{spec.table_name} already has rows; use --append to add more")
         references = _references()
-        rng = random.Random(seed)
-        with audit.system_actor("seed"):
-            for index in range(rows):
-                values = {
-                    field.column_name: _value(field, index, rng, session, references)
-                    for field in spec.fields
-                }
-                audit.insert(session, model(**values))
+        rng = random.Random(f"{seed}:{existing}")
+        try:
+            with audit.system_actor("seed"):
+                for offset in range(rows):
+                    index = existing + offset
+                    values = {
+                        field.column_name: _value(field, index, rng, session, references, today)
+                        for field in spec.fields
+                    }
+                    audit.insert(session, model(**values), commit=False)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
     print(f"seeded {rows} {spec.table_name} rows")
     return rows
 
 
-def _value(field: Field, index: int, rng: random.Random, session, references):
+def _value(field: Field, index: int, rng: random.Random, session, references, today: date):
     sample = field.sample
     if isinstance(sample, tuple):
         raw = rng.choice(sample)
@@ -153,7 +166,7 @@ def _value(field: Field, index: int, rng: random.Random, session, references):
     if field.type == NUMBER:
         return Decimal(f"{rng.uniform(0, 100):.1f}")
     if field.type == DATE:
-        return datetime.now(UTC).date() - timedelta(days=rng.randint(0, 89))
+        return today - timedelta(days=rng.randint(0, 89))
     if field.type == BOOL:
         return bool(rng.getrandbits(1))
     if field.type == ENUM:
@@ -184,12 +197,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("spec", type=Path)
     parser.add_argument("--rows", type=int, required=True)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--today", type=date.fromisoformat, default=datetime.now(UTC).date())
     parser.add_argument("--append", action="store_true")
     args = parser.parse_args(argv)
     if args.rows < 1:
         parser.error("--rows must be positive")
     try:
-        seed(args.spec, args.rows, args.seed, args.append)
+        seed(args.spec, args.rows, args.seed, args.append, args.today)
     except (ImportError, AttributeError, ValueError) as error:
         parser.error(str(error))
     return 0

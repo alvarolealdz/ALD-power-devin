@@ -88,6 +88,11 @@ def test_new_field_options_are_validated(field, message):
         parse({**MINIMAL, "fields": [field]})
 
 
+def test_empty_sample_lists_are_rejected():
+    with pytest.raises(SpecError, match="sample list cannot be empty"):
+        parse({**MINIMAL, "fields": [{"name": "label", "type": "text", "sample": []}]})
+
+
 def test_two_workflow_fields_are_rejected():
     with pytest.raises(SpecError, match="at most one"):
         parse(
