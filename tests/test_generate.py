@@ -290,3 +290,33 @@ def test_fk_can_point_at_another_generated_app(root, spec_path):
 
     routes = (root / "apps" / "parts" / "routes.py").read_text()
     assert "from apps.widgets.model import Widget" in routes
+
+
+@pytest.mark.parametrize("app", ["widgets", "kyc_queue"])
+def test_the_spec_alone_reproduces_the_committed_app(tmp_path, app):
+    """Delete an app, regenerate from its spec, get the same bytes back."""
+    repo = generate.APPS_DIR.parent
+    root = tmp_path / "repo"
+    (root / "apps").mkdir(parents=True)
+    (root / "specs").mkdir()
+    versions = root / "migrations" / "versions"
+    versions.mkdir(parents=True)
+    for path in (repo / "migrations" / "versions").glob("*.py"):
+        (versions / path.name).write_text(path.read_text())
+    for other in (repo / "apps").iterdir():
+        if other.is_dir() and other.name != app and not other.name.startswith("_"):
+            (root / "apps" / other.name).mkdir()
+            (root / "apps" / other.name / "model.py").write_text(
+                (other / "model.py").read_text()
+            )
+    spec_path = root / "specs" / f"{app}.yaml"
+    spec_path.write_text((repo / "specs" / f"{app}.yaml").read_text())
+
+    generate.generate(spec_path, root=root)
+
+    committed = repo / "apps" / app
+    for path in sorted((root / "apps" / app).rglob("*")):
+        if path.is_dir() or path.name == generate.MANIFEST_NAME:
+            continue
+        relative = path.relative_to(root / "apps" / app)
+        assert path.read_text() == (committed / relative).read_text(), relative
