@@ -1,4 +1,6 @@
+import random
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from apps.widgets.model import Widget
 from foundation import audit
 from foundation.models import AuditLog
 from scaffold import seed as seed_module
+from scaffold.spec import Field
 
 
 def test_seed_is_deterministic_and_refuses_existing_rows(engine, session, seeded, monkeypatch):
@@ -113,3 +116,32 @@ def test_seed_slug_company_and_number_ranges(engine, session, seeded, monkeypatc
     rows = session.scalars(select(VendorContract)).all()
     assert all(5000 <= int(row.annual_value) <= 250000 for row in rows)
     assert rows[0].vendor_name in seed_module.COMPANIES
+
+
+def test_decimal_range_near_numeric_limit_seeds_without_error(session):
+    field = Field(
+        name="amount",
+        type="number",
+        label="Amount",
+        sample={"min": Decimal(10000000000000), "max": Decimal(10000000000001)},
+        decimals=2,
+    )
+    value = seed_module._value(field, 0, random.Random(1), session, {}, date(2026, 1, 1))
+    assert Decimal(10000000000000) <= value <= Decimal(10000000000001)
+
+
+@pytest.mark.parametrize("decimals", [0, 4])
+@pytest.mark.parametrize("sign", [1, -1])
+def test_range_at_numeric_limit_never_rounds_past_it(session, decimals, sign):
+    limit = Decimal(10**14 - 1)
+    lo, hi = sorted([sign * limit, sign * (limit - Decimal("0.5"))])
+    field = Field(
+        name="amount",
+        type="number",
+        label="Amount",
+        sample={"min": lo, "max": hi},
+        decimals=decimals,
+    )
+    for seed in range(20):
+        value = seed_module._value(field, 0, random.Random(seed), session, {}, date(2026, 1, 1))
+        assert abs(value) <= limit

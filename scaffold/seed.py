@@ -5,6 +5,7 @@ import importlib
 import random
 import sys
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -168,7 +169,9 @@ def seed(
 def _value(field: Field, index: int, rng: random.Random, session, references, today: date):
     sample = field.sample
     if isinstance(sample, dict):
-        raw = rng.uniform(float(sample["min"]), float(sample["max"]))
+        minimum = sample["min"]
+        maximum = sample["max"]
+        raw = minimum + (maximum - minimum) * Decimal(rng.random())
         return forms.number(str(raw), decimals=field.decimals)
     if isinstance(sample, tuple):
         raw = sample[index % len(sample)]

@@ -680,6 +680,8 @@ def toggle_row(
     current_user: CurrentUser,
     kyc_review_id: int,
     column: str,
+    value: Annotated[str | None, Form()] = None,
+    expected: Annotated[str, Form()] = "",
     next: Annotated[str, Form()] = "",
 ):
     if column not in _TOGGLEABLE:
@@ -688,7 +690,15 @@ def toggle_row(
     if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user):
         raise HTTPException(status_code=403, detail="admin access required")
     row = _get(session, kyc_review_id)
-    audit.update(session, row, {column: not getattr(row, column)})
+    current = bool(getattr(row, column))
+    if expected and expected != ("1" if current else "0"):
+        raise HTTPException(
+            status_code=409,
+            detail="this KYC review was already changed by someone else; reload to see it",
+        )
+    new_value = value is not None
+    if new_value != current:
+        audit.update(session, row, {column: new_value})
     return _redirect_next(request, next)
 
 

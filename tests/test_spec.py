@@ -95,11 +95,32 @@ def test_unit_field_must_be_text_or_enum_and_exist():
                 ],
             }
         )
+    with pytest.raises(SpecError, match="must be sensitive when the number is"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "amount",
+                        "type": "number",
+                        "sensitive": True,
+                        "unit_field": "currency",
+                    },
+                    {"name": "currency", "type": "text"},
+                ],
+            }
+        )
 
 
 @pytest.mark.parametrize(
     "sample",
-    [{"min": 4}, {"max": 9}, {"min": 9, "max": 4}, {"min": "low", "max": 4}],
+    [
+        {"min": 4},
+        {"max": 9},
+        {"min": 9, "max": 4},
+        {"min": "low", "max": 4},
+        {"min": "99999999999999.5", "max": "100000000000000"},
+    ],
 )
 def test_number_sample_ranges_are_validated(sample):
     with pytest.raises(SpecError, match="sample"):
