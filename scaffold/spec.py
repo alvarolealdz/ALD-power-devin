@@ -148,6 +148,12 @@ class Spec:
         return self.singular or _humanise(self.entity)
 
     @property
+    def singular_heading(self) -> str:
+        """``singular_title`` for the start of a sentence: only the first character is uppercased."""
+        title = self.singular_title
+        return title[:1].upper() + title[1:]
+
+    @property
     def sensitive_fields(self) -> tuple[Field, ...]:
         return tuple(field for field in self.fields if field.sensitive)
 

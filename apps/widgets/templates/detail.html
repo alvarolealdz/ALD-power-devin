@@ -27,7 +27,7 @@ Edit freely: regenerating keeps any file you have changed. #}
         <form action="{{ decision_url }}" method="post" class="decision-actions">
           <input type="hidden" name="expected" value="{{ current.label }}">
           {% for decision in decisions %}
-            <button class="btn tone-{{ decision.tone }}" name="status" value="{{ decision.value }}">Mark {{ decision.label }}</button>
+            <button class="btn tone-{{ decision.tone }}" name="status" value="{{ decision.value }}">Mark {{ decision.label|lower }}</button>
           {% endfor %}
         </form>
       </aside>

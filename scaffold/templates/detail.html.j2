@@ -5,7 +5,7 @@
   <div class="page-head">
     <div>
       <p class="crumbs"><a href="{{ list_url }}">[[ spec.title ]]</a> / #{{ row_id }}[% if spec.workflow_field %] <a class="btn btn-ghost btn-sm" href="{{ list_url }}">Back to queue</a>[% endif %]</p>
-      <h1>[[ spec.singular_title ]] #{{ row_id }}</h1>
+      <h1>[[ spec.singular_heading ]] #{{ row_id }}</h1>
     </div>
     {% if edit_url or delete_url %}
       <div class="actions">
@@ -26,7 +26,7 @@
         <form action="{{ decision_url }}" method="post" class="decision-actions">
           <input type="hidden" name="expected" value="{{ current.label }}">
           {% for decision in decisions %}
-            <button class="btn tone-{{ decision.tone }}" name="[[ workflow_name ]]" value="{{ decision.value }}">Mark {{ decision.label }}</button>
+            <button class="btn tone-{{ decision.tone }}" name="[[ workflow_name ]]" value="{{ decision.value }}">Mark {{ decision.label|lower }}</button>
           {% endfor %}
         </form>
       </aside>
