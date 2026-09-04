@@ -123,6 +123,10 @@ def test_detail_and_workflow_decision_are_role_aware(client, session, editor, vi
     detail = client.get("/widgets/1")
     assert detail.status_code == 200
     assert "Widget #1" in detail.text
+    assert (
+        'data-confirm="Delete Widget #1? This is recorded in the audit trail and cannot be undone."'
+        in detail.text
+    )
     assert "Decision" in detail.text
     assert "Mark Review" in detail.text
 
@@ -449,3 +453,187 @@ def test_kyc_workflow_transitions_limit_decisions(client, session, editor, seede
         r'<span class="stat-value">1</span><span class="stat-label">Decided today</span>',
         queue.text,
     )
+
+
+def test_kyc_edit_form_enforces_workflow_transitions(client, session, editor, seeded):
+    def create_review(reference, status):
+        response = client.post(
+            "/kyc-queue",
+            data={
+                "customer_name": "Ada Lovelace",
+                "customer_ref": reference,
+                "risk_score": "10",
+                "status": status,
+                "submitted_on": "2026-01-01",
+                "reviewer_id": str(seeded.id),
+                "notes": "Initial review",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        return session.scalars(select(KycReview).where(KycReview.customer_ref == reference)).one()
+
+    approved = create_review("CUS-003", "approved")
+    as_user(client, editor)
+    form = client.get(f"/kyc-queue/{approved.id}/edit")
+    assert form.status_code == 200
+    assert '<option value="pending"' not in form.text
+
+    updates_before = session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "kyc_review",
+            AuditLog.row_id == str(approved.id),
+            AuditLog.action == AuditLog.ACTION_UPDATE,
+        )
+    ).all()
+    blocked = client.post(
+        f"/kyc-queue/{approved.id}",
+        data={"status": "pending", "notes": "Should be rejected"},
+        follow_redirects=False,
+    )
+    assert blocked.status_code == 400
+    assert "transition not allowed" in blocked.text
+    session.refresh(approved)
+    assert approved.status == "approved"
+    updates_after = session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "kyc_review",
+            AuditLog.row_id == str(approved.id),
+            AuditLog.action == AuditLog.ACTION_UPDATE,
+        )
+    ).all()
+    assert len(updates_after) == len(updates_before)
+
+    unchanged = client.post(
+        f"/kyc-queue/{approved.id}",
+        data={"status": "approved", "notes": "Updated notes"},
+        follow_redirects=False,
+    )
+    assert unchanged.status_code == 303
+    session.refresh(approved)
+    assert approved.notes == "Updated notes"
+
+    as_user(client, seeded)
+    pending = create_review("CUS-004", "pending")
+    as_user(client, editor)
+    response = client.post(
+        f"/kyc-queue/{pending.id}",
+        data={"status": "approved", "notes": "Approved in edit form"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    session.refresh(pending)
+    assert pending.status == "approved"
+
+
+def test_kyc_decision_rejects_stale_expected_state(client, session, editor, seeded):
+    response = client.post(
+        "/kyc-queue",
+        data={
+            "customer_name": "Ada Lovelace",
+            "customer_ref": "CUS-005",
+            "risk_score": "10",
+            "status": "pending",
+            "submitted_on": "2026-01-01",
+            "reviewer_id": str(seeded.id),
+            "notes": "Initial review",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    row = session.scalars(select(KycReview)).one()
+
+    as_user(client, editor)
+    with TestClient(app) as second_client:
+        as_user(second_client, editor)
+        first_detail = client.get(f"/kyc-queue/{row.id}")
+        second_detail = second_client.get(f"/kyc-queue/{row.id}")
+        assert 'name="expected" value="pending"' in first_detail.text
+        assert 'name="expected" value="pending"' in second_detail.text
+
+        first = client.post(
+            f"/kyc-queue/{row.id}/status",
+            data={"status": "approved", "expected": "pending"},
+            follow_redirects=False,
+        )
+        assert first.status_code == 303
+        updates_after_first = session.scalars(
+            select(AuditLog).where(
+                AuditLog.table_name == "kyc_review",
+                AuditLog.row_id == str(row.id),
+                AuditLog.action == AuditLog.ACTION_UPDATE,
+            )
+        ).all()
+
+        second = second_client.post(
+            f"/kyc-queue/{row.id}/status",
+            data={"status": "approved", "expected": "pending"},
+            follow_redirects=False,
+        )
+        assert second.status_code == 409
+        assert "already moved to approved" in second.text
+        updates_after_second = session.scalars(
+            select(AuditLog).where(
+                AuditLog.table_name == "kyc_review",
+                AuditLog.row_id == str(row.id),
+                AuditLog.action == AuditLog.ACTION_UPDATE,
+            )
+        ).all()
+
+    session.refresh(row)
+    assert row.status == "approved"
+    assert len(updates_after_second) == len(updates_after_first) == 1
+
+
+def test_kyc_search_and_sort_respect_visibility(client, session, editor, seeded):
+    def create_review(reference, customer, risk, notes="Queue note"):
+        response = client.post(
+            "/kyc-queue",
+            data={
+                "customer_name": customer,
+                "customer_ref": reference,
+                "risk_score": str(risk),
+                "status": "pending",
+                "submitted_on": "2026-01-01",
+                "reviewer_id": str(seeded.id),
+                "notes": notes,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+    create_review("CUS-006", "Ada Lovelace", 10)
+    create_review("CUS-007", "Grace Hopper", 90)
+    create_review("CUS-008", "Percent Case", 20, "100% done")
+    create_review("CUS-009", "Plain Case", 30, "100 done")
+
+    admin_search = client.get("/kyc-queue?q=Ada")
+    assert admin_search.status_code == 200
+    assert "Ada Lovelace" in admin_search.text
+    assert "Grace Hopper" not in admin_search.text
+
+    as_user(client, editor)
+    editor_search = client.get("/kyc-queue?q=Ada")
+    assert editor_search.status_code == 200
+    assert 'class="cell-id"' not in editor_search.text
+
+    as_user(client, seeded)
+    percent_search = client.get("/kyc-queue?q=100%")
+    assert percent_search.status_code == 200
+    assert "Percent Case" in percent_search.text
+    assert "Plain Case" not in percent_search.text
+    underscore_search = client.get("/kyc-queue?q=_")
+    assert underscore_search.status_code == 200
+    assert "Percent Case" not in underscore_search.text
+    assert "Plain Case" not in underscore_search.text
+
+    as_user(client, seeded)
+    sorted_rows = client.get("/kyc-queue?sort=risk_score&dir=desc")
+    assert sorted_rows.status_code == 200
+    assert sorted_rows.text.index("90") < sorted_rows.text.index("10")
+
+    as_user(client, editor)
+    fallback = client.get("/kyc-queue?sort=customer_name")
+    assert fallback.status_code == 200
+    assert fallback.text.index("#1") < fallback.text.index("#2")
+    assert client.get("/kyc-queue?sort=bogus").status_code == 200

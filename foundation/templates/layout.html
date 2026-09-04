@@ -19,5 +19,11 @@
     <main class="page">
       {% block content %}{% endblock %}
     </main>
+    <script>
+      document.addEventListener("submit", (event) => {
+        const message = event.target.dataset.confirm;
+        if (message && !window.confirm(message)) event.preventDefault();
+      });
+    </script>
   </body>
 </html>

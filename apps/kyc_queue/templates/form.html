@@ -13,7 +13,7 @@ Creating a row is admin-only: customer_name, customer_ref are required but hidde
   <p class="toolbar">
     <a class="btn btn-ghost" href="{{ list_url }}">Back to kyc review queue</a>
     {% if delete_url %}
-      <form class="inline" action="{{ delete_url }}" method="post">
+      <form class="inline" action="{{ delete_url }}" method="post" data-confirm="Delete KYC review #{{ row_id }}? This is recorded in the audit trail and cannot be undone.">
         <button class="btn btn-danger btn-sm" type="submit">Delete</button>
       </form>
     {% endif %}

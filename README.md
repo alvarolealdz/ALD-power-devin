@@ -10,10 +10,16 @@ base Jinja templates — and `apps/`, generated on top of it by
 uv sync
 uv run python scaffold/generate.py specs/widgets.yaml   # writes apps/widgets/ + a migration
 uv run python scaffold/generate.py specs/kyc_queue.yaml # writes apps/kyc_queue/ + a migration
+uv run python scaffold/generate.py specs/refunds.yaml   # writes apps/refunds/ + a migration
+uv run python scaffold/generate.py specs/feature_flags.yaml # writes apps/feature_flags/ + a migration
+uv run python scaffold/generate.py specs/vendor_contracts.yaml # writes apps/vendor_contracts/ + a migration
 uv run alembic upgrade head                             # create the schema
 uv run python -m foundation.seed                        # roles + admin@example.com
 uv run python scaffold/seed.py specs/widgets.yaml --rows 30
 uv run python scaffold/seed.py specs/kyc_queue.yaml --rows 12
+uv run python scaffold/seed.py specs/refunds.yaml --rows 25
+uv run python scaffold/seed.py specs/feature_flags.yaml --rows 12
+uv run python scaffold/seed.py specs/vendor_contracts.yaml --rows 25
 uv run uvicorn foundation.app:app --reload
 ```
 

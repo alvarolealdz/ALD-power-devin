@@ -10,7 +10,15 @@
   <table class="table">
     <thead>
       <tr>
-        {% for column in columns %}<th>{{ column.label|default(column.key) }}</th>{% endfor %}
+        {% for column in columns %}
+          <th>
+            {% if column.sort_href %}
+              <a href="{{ column.sort_href }}">{{ column.label|default(column.key) }}{% if column.sorted == "asc" %} <span class="sort-arrow">▲</span>{% elif column.sorted == "desc" %} <span class="sort-arrow">▼</span>{% endif %}</a>
+            {% else %}
+              {{ column.label|default(column.key) }}
+            {% endif %}
+          </th>
+        {% endfor %}
         {% if actions %}<th></th>{% endif %}
       </tr>
     </thead>

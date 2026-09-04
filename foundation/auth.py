@@ -13,7 +13,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from foundation.config import CURRENT_USER_COOKIE
 from foundation.db import session_scope
@@ -101,17 +101,19 @@ def require_admin(user: User | None) -> None:
 
 
 def list_users(session: Session) -> list[User]:
-    return list(session.scalars(select(User).order_by(User.display_name)))
+    return list(
+        session.scalars(select(User).options(joinedload(User.role)).order_by(User.display_name))
+    )
 
 
 def resolve_user(session: Session, user_id: int | None) -> User | None:
     if user_id is None:
         return None
-    return session.get(User, user_id)
+    return session.scalar(select(User).options(joinedload(User.role)).where(User.id == user_id))
 
 
 def default_user(session: Session) -> User | None:
-    return session.scalars(select(User).order_by(User.id)).first()
+    return session.scalars(select(User).options(joinedload(User.role)).order_by(User.id)).first()
 
 
 def get_db(request: Request) -> Iterator[Session]:

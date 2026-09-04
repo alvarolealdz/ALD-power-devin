@@ -184,6 +184,28 @@ main {
   gap: 0.6rem;
 }
 
+.search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: -0.75rem 0 1.25rem;
+}
+
+.search input {
+  min-width: 16rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.search input:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
 .crumbs {
   font-size: 0.85rem;
   color: var(--muted);
@@ -489,6 +511,16 @@ button:disabled,
   color: var(--faint);
   padding-top: 1.1rem;
   padding-bottom: 0.7rem;
+}
+
+.table th a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sort-arrow {
+  color: var(--muted);
+  font-size: 0.75em;
 }
 
 .table tbody tr:last-child td {

@@ -1,0 +1,50 @@
+app: refunds
+entity: refund
+title: Refunds dashboard
+singular: refund
+description: Customer refund requests waiting for approval and processing.
+
+fields:
+  - name: transaction_ref
+    type: text
+    required: true
+    sample: reference
+
+  - name: customer_ref
+    type: text
+    required: true
+    sensitive: true
+    sample: reference
+
+  - name: amount
+    type: number
+    required: true
+
+  - name: currency
+    type: text
+    required: true
+    sample: [EUR, GBP, USD, CHF]
+
+  - name: reason
+    type: text
+    sample: sentence
+
+  - name: status
+    type: enum
+    required: true
+    options: [pending, approved, denied, processed]
+    workflow: true
+    open: [pending]
+    transitions:
+      pending: [approved, denied]
+      approved: [processed]
+      denied: []
+      processed: []
+    tones: {pending: warning, approved: info, denied: danger, processed: success}
+
+  - name: requested_on
+    type: date
+
+  - name: approver
+    type: fk
+    target: user

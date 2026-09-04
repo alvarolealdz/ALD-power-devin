@@ -1,0 +1,28 @@
+app: feature_flags
+entity: feature_flag
+title: Feature flags
+singular: feature flag
+description: Runtime switches per environment, and who last touched them.
+
+fields:
+  - name: flag_key
+    type: text
+    required: true
+    sample: words
+
+  - name: description
+    type: text
+    sample: sentence
+
+  - name: enabled
+    type: bool
+
+  - name: environment
+    type: enum
+    required: true
+    options: [dev, staging, prod]
+    tones: {dev: neutral, staging: info, prod: warning}
+
+  - name: last_modified_by
+    type: fk
+    target: user

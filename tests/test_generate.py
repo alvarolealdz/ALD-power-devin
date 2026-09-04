@@ -1,6 +1,8 @@
 """The generator, run against a throwaway repo root."""
 
 import compileall
+import importlib
+import sys
 import textwrap
 
 import alembic
@@ -87,6 +89,48 @@ def test_generated_code_is_normal_code(root, spec_path):
     assert "audit.insert(session, row)" in routes
     assert "audit.update(session, row, values)" in routes
     assert "audit.delete(session, row)" in routes
+
+
+def test_sensitive_workflow_options_are_filtered_in_admin_forms(root, spec_path):
+    spec_path.write_text(
+        textwrap.dedent(
+            """
+            app: sensitive_cases
+            entity: sensitive_case
+            fields:
+              - name: title
+                type: text
+              - name: status
+                type: enum
+                options: [pending, approved, rejected]
+                required: true
+                sensitive: true
+                workflow: true
+                transitions:
+                  pending: [approved, rejected]
+                  approved: []
+                  rejected: []
+            """
+        )
+    )
+    generate.generate(spec_path, root=root)
+
+    import apps
+
+    apps.__path__ = [str(root / "apps"), *list(apps.__path__)]
+    routes = importlib.import_module("apps.sensitive_cases.routes")
+    fields = routes._fields(
+        None,
+        {"title": "Case", "status": "approved"},
+        admin=True,
+    )
+    status = next(field for field in fields if field["name"] == "status")
+
+    assert [option["value"] for option in status["options"]] == ["approved"]
+
+    for name in list(sys.modules):
+        if name == "apps.sensitive_cases" or name.startswith("apps.sensitive_cases."):
+            del sys.modules[name]
 
 
 def test_required_sensitive_creation_uses_admin_checks(root, spec_path):
@@ -294,7 +338,9 @@ def test_fk_can_point_at_another_generated_app(root, spec_path):
     assert "from apps.widgets.model import Widget" in routes
 
 
-@pytest.mark.parametrize("app", ["widgets", "kyc_queue"])
+@pytest.mark.parametrize(
+    "app", ["widgets", "kyc_queue", "refunds", "feature_flags", "vendor_contracts"]
+)
 def test_the_spec_alone_reproduces_the_committed_app(tmp_path, app):
     """Delete an app, regenerate from its spec, get the same bytes back."""
     repo = generate.APPS_DIR.parent
