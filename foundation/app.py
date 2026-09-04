@@ -65,10 +65,12 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
     feed = []
     for entry in entries:
         href = None
+        target_label = entry.table_name.replace("_", " ").capitalize()
         for item in mounted:
             model = item.model
             if model is None or model.__tablename__ != entry.table_name:
                 continue
+            target_label = item.singular
             try:
                 href = str(
                     request.url_for(
@@ -87,10 +89,14 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
                     AuditLog.ACTION_UPDATE: "updated",
                     AuditLog.ACTION_DELETE: "deleted",
                 }.get(entry.action, entry.action),
-                "target": f"{entry.table_name.replace('_', ' ').capitalize()} #{entry.row_id}",
+                "target": f"{target_label} #{entry.row_id}",
                 "href": href,
                 "when": forms.display(entry.created_at),
-                "changes": audit_view.changes(entry, admin=admin),
+                "changes": (
+                    audit_view.changes(entry, admin=admin, session=session)
+                    if entry.action == AuditLog.ACTION_UPDATE
+                    else []
+                ),
             }
         )
     return templates.TemplateResponse(

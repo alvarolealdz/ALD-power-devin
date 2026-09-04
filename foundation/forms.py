@@ -121,6 +121,8 @@ def display(value: Any) -> str:
         return value.strftime("%-d %b %Y, %H:%M")
     if isinstance(value, date):
         return value.strftime("%-d %b %Y")
+    if isinstance(value, Decimal):
+        return format(value.normalize(), "f")
     return str(value)
 
 

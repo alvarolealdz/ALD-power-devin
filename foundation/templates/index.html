@@ -2,11 +2,7 @@
 
 {% block content %}
   <h1>Foundation</h1>
-  <p>
-    Current user:
-    <strong>{{ current_user.display_name if current_user else "none" }}</strong>
-    {% if current_user %}<span class="role">{{ current_user.role.name }}</span>{% endif %}
-  </p>
+  <p class="muted">Apps built on the shared foundation, and everything that changed across them.</p>
 
   <section class="apps-grid">
     {% for item in apps %}
@@ -29,11 +25,13 @@
             {% if item.href %}<a class="feed-target" href="{{ item.href }}">{{ item.target }}</a>{% else %}<span class="feed-target">{{ item.target }}</span>{% endif %}
             <time>{{ item.when }}</time>
           </div>
-          <ul class="changes">
-            {% for change in item.changes %}
-              <li><span class="chg-field">{{ change.field }}</span> <span class="chg-old">{{ change.before }}</span> → <span class="chg-new">{{ change.after }}</span></li>
-            {% endfor %}
-          </ul>
+          {% if item.changes %}
+            <ul class="changes">
+              {% for change in item.changes %}
+                <li><span class="chg-field">{{ change.field }}</span> <span class="chg-old">{{ change.before }}</span> → <span class="chg-new">{{ change.after }}</span></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
         </li>
       {% else %}
         <li class="muted">No recent activity.</li>

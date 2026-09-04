@@ -48,6 +48,10 @@ class DiscoveredApp:
         return getattr(self.module("routes"), "DESCRIPTION", "")
 
     @property
+    def singular(self) -> str:
+        return getattr(self.module("routes"), "SINGULAR", self.name.replace("_", " ").capitalize())
+
+    @property
     def model(self):
         return getattr(self.module("routes"), "MODEL", None)
 
