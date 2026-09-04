@@ -107,4 +107,7 @@ def get_current_user(request: Request, session: Annotated[Session, Depends(get_d
         user = default_user(session)
     set_current_user_id(user.id if user else None)
     request.state.current_user = user
+    # The switcher is chrome on every page, so the layout reads it from here
+    # rather than each route remembering to pass it.
+    request.state.switchable_users = list_users(session)
     return user

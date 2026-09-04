@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from foundation.forms import NUMBER_PRECISION, NUMBER_SCALE
 from scaffold.spec import BOOL, DATE, ENUM, FK, NUMBER, TEXT, Field, Spec, SpecError
 
 TEXT_LENGTH = 255
 ENUM_LENGTH = 64
-NUMERIC = "Numeric(18, 4)"
+NUMERIC = f"Numeric({NUMBER_PRECISION}, {NUMBER_SCALE})"
 
 #: Foreign keys the foundation always offers. Anything else must be another
 #: generated app's table, resolved by looking at what is already on disk.
@@ -202,6 +203,7 @@ def form_field_literal(field: Field, references: dict[str, Reference]) -> str:
         base["type"] = "text"
     elif field.type == NUMBER:
         base["type"] = "number"
+        base["step"] = "any"  # the column takes decimals; the browser defaults to integers
     elif field.type == DATE:
         base["type"] = "date"
     elif field.type == BOOL:
@@ -280,6 +282,16 @@ def route_imports(spec: Spec, references: dict[str, Reference]) -> list[str]:
     return lines
 
 
+def reference_rows(spec: Spec, references: dict[str, Reference]) -> list[str]:
+    """``(column, label, Model)`` triples the routes use to check an fk exists."""
+    return [
+        f'("{field.column_name}", "{references[field.name].table}", '
+        f"{references[field.name].class_name})"
+        for field in spec.fields
+        if field.is_reference
+    ]
+
+
 def model_import_names(spec: Spec) -> str:
     names = [spec.class_name]
     names += [f"{field.name.upper()}_OPTIONS" for field in spec.fields if field.type == ENUM]
@@ -295,7 +307,7 @@ def migration_column(field: Field, references: dict[str, Reference]) -> str:
     if field.type == TEXT:
         column_type = f"sa.String({TEXT_LENGTH})"
     elif field.type == NUMBER:
-        column_type = "sa.Numeric(18, 4)"
+        column_type = f"sa.Numeric({NUMBER_PRECISION}, {NUMBER_SCALE})"
     elif field.type == DATE:
         column_type = "sa.Date()"
     elif field.type == BOOL:

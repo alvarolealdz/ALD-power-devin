@@ -1,8 +1,14 @@
+{#
+  Mock auth switcher. Falls back to request.state, which foundation.auth fills
+  on every request, so a page does not have to pass anything to show it.
+#}
+{% set switch_users = users|default(request.state.switchable_users, true)|default([], true) %}
+{% set acting_as = current_user|default(request.state.current_user, true)|default(none, true) %}
 <form class="user-switcher" action="{{ url_for('switch_user') }}" method="post">
   <label for="user_id">Acting as</label>
   <select id="user_id" name="user_id" onchange="this.form.requestSubmit()">
-    {% for user in users %}
-      <option value="{{ user.id }}" {% if current_user and user.id == current_user.id %}selected{% endif %}>
+    {% for user in switch_users %}
+      <option value="{{ user.id }}" {% if acting_as and user.id == acting_as.id %}selected{% endif %}>
         {{ user.display_name }} ({{ user.role.name }})
       </option>
     {% endfor %}

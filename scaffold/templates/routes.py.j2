@@ -81,6 +81,26 @@ def _fields(
     return fields
 
 
+[% if reference_rows %]
+#: Foreign keys to check before writing: (column, table, model).
+_REFERENCES = (
+[% for line in reference_rows %]
+    [[ line ]],
+[% endfor %]
+)
+
+
+def _check_references(
+    session: Session, values: dict[str, object], errors: dict[str, str]
+) -> None:
+    """A well-formed id pointing at nothing is a bad request, not an IntegrityError."""
+    for column, table, model in _REFERENCES:
+        value = values.get(column)
+        if value is not None and session.get(model, value) is None:
+            errors[column] = f"no such {table}"
+
+
+[% endif %]
 def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], dict[str, str]]:
     values: dict[str, object] = {}
     errors: dict[str, str] = {}
@@ -168,6 +188,9 @@ def create_row(
 ):
     admin = auth.is_admin(current_user)
     values, errors = _parse([[ submitted_dict ]], admin)
+[% if reference_rows %]
+    _check_references(session, values, errors)
+[% endif %]
     if errors:
         return _form_page(
             request,
@@ -216,6 +239,9 @@ def update_row(
     admin = auth.is_admin(current_user)
     row = _get(session, [[ spec.entity ]]_id)
     values, errors = _parse([[ submitted_dict ]], admin)
+[% if reference_rows %]
+    _check_references(session, values, errors)
+[% endif %]
     if errors:
         return _form_page(
             request,

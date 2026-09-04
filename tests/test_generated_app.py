@@ -119,6 +119,51 @@ def test_a_non_admin_never_sees_a_sensitive_field(client, editor, widget):
     assert "internal_note" not in form.text
 
 
+def test_a_non_admin_does_not_see_sensitive_values_in_the_audit_trail(client, editor, widget):
+    """The audit payload carries the row, so it obeys the same rule the row does."""
+    as_editor(client, editor)
+
+    home = client.get("/")
+
+    assert "confidential" not in home.text
+    assert "Before" not in home.text
+
+
+def test_an_admin_still_sees_the_audit_payload(client, widget):
+    assert "confidential" in client.get("/").text
+
+
+def test_a_reference_to_a_row_that_does_not_exist_is_a_bad_request(client, session):
+    response = client.post("/widgets", data={"label": "Alpha", "owner_id": "999"})
+
+    assert response.status_code == 400
+    assert "no such user" in response.text
+    assert session.scalars(select(Widget)).all() == []
+
+
+@pytest.mark.parametrize("quantity", ["NaN", "Infinity", "-9" * 30, "1.00001"])
+def test_numbers_the_column_cannot_hold_are_refused(client, session, quantity):
+    response = client.post("/widgets", data={"label": "Alpha", "quantity": quantity})
+
+    assert response.status_code == 400
+    assert session.scalars(select(Widget)).all() == []
+
+
+def test_a_decimal_quantity_survives_the_round_trip(client, session):
+    client.post("/widgets", data={"label": "Alpha", "quantity": "42.5"})
+
+    assert str(session.scalars(select(Widget)).one().quantity) == "42.5000"
+    assert 'step="any"' in client.get("/widgets/new").text
+
+
+def test_the_user_switcher_is_populated_on_a_generated_page(client, editor):
+    """The header is foundation's business; a generated route passes it nothing."""
+    page = client.get("/widgets")
+
+    assert "Editor (editor)" in page.text
+    assert page.text.count("<option") >= 2
+
+
 def test_a_non_admin_cannot_submit_a_sensitive_field(client, session, editor, widget):
     """Hiding it in the template is cosmetic; the route has to ignore it too."""
     as_editor(client, editor)

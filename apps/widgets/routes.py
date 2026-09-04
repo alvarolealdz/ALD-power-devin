@@ -75,6 +75,7 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
             "value": values.get("quantity"),
             "required": False,
             "type": "number",
+            "step": "any",
         },
         {
             "name": "due_on",
@@ -124,6 +125,18 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
             ]
         )
     return fields
+
+
+#: Foreign keys to check before writing: (column, table, model).
+_REFERENCES = (("owner_id", "user", User),)
+
+
+def _check_references(session: Session, values: dict[str, object], errors: dict[str, str]) -> None:
+    """A well-formed id pointing at nothing is a bad request, not an IntegrityError."""
+    for column, table, model in _REFERENCES:
+        value = values.get(column)
+        if value is not None and session.get(model, value) is None:
+            errors[column] = f"no such {table}"
 
 
 def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], dict[str, str]]:
@@ -231,6 +244,7 @@ def create_row(
         },
         admin,
     )
+    _check_references(session, values, errors)
     if errors:
         return _form_page(
             request,
@@ -300,6 +314,7 @@ def update_row(
         },
         admin,
     )
+    _check_references(session, values, errors)
     if errors:
         return _form_page(
             request,

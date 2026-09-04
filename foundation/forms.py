@@ -13,6 +13,10 @@ from typing import Any
 
 TRUTHY = frozenset({"1", "true", "on", "yes"})
 
+# What a numeric column can hold. Generated models use the same two numbers.
+NUMBER_PRECISION = 18
+NUMBER_SCALE = 4
+
 
 class FieldError(ValueError):
     """Raised when a submitted value cannot be used."""
@@ -28,13 +32,28 @@ def text(raw: str | None, *, required: bool = False, max_length: int | None = No
 
 
 def number(raw: str | None, *, required: bool = False) -> Decimal | None:
+    """A finite decimal that the column can hold.
+
+    ``Decimal`` happily parses ``NaN`` and ``Infinity``, and SQLite stores
+    anything wider than the column as a float, losing digits without a word.
+    Both are refused here rather than written.
+    """
     value = (raw or "").strip()
     if not value:
         return _missing(required)
     try:
-        return Decimal(value)
+        parsed = Decimal(value)
     except InvalidOperation as error:
         raise FieldError("must be a number") from error
+    if not parsed.is_finite():
+        raise FieldError("must be a finite number")
+    digits, scale = NUMBER_PRECISION, NUMBER_SCALE
+    exponent = parsed.as_tuple().exponent
+    if not isinstance(exponent, int) or -exponent > scale:
+        raise FieldError(f"must have at most {scale} decimal places")
+    if len(parsed.as_tuple().digits) + exponent > digits - scale:
+        raise FieldError(f"must have at most {digits - scale} digits before the decimal point")
+    return parsed
 
 
 def day(raw: str | None, *, required: bool = False) -> date | None:

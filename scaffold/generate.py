@@ -129,6 +129,7 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
         },
         parse_visible=[codegen.parse_line(field) for field in spec.visible_fields],
         parse_sensitive=[codegen.parse_line(field) for field in spec.sensitive_fields],
+        reference_rows=codegen.reference_rows(spec, references),
         form_params=[codegen.form_param(field) for field in spec.fields],
         submitted_dict=codegen.submitted_dict(spec),
     )

@@ -48,6 +48,12 @@ def health(session: DbSession) -> dict[str, object]:
 def index(request: Request, session: DbSession, current_user: CurrentUser):
     users = auth.list_users(session)
     entries = list(session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(25)))
+    # before/after carry whatever the row held, including any app's sensitive
+    # columns, so the payload follows the same rule those columns do.
+    admin = auth.is_admin(current_user)
+    payload_columns = (
+        [{"key": "before", "label": "Before"}, {"key": "after", "label": "After"}] if admin else []
+    )
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -74,8 +80,7 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
                 {"key": "actor", "label": "Actor"},
                 {"key": "action", "label": "Action"},
                 {"key": "target", "label": "Row"},
-                {"key": "before", "label": "Before"},
-                {"key": "after", "label": "After"},
+                *payload_columns,
             ],
             "audit_rows": [
                 {
@@ -83,8 +88,7 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
                     "actor": entry.actor_label,
                     "action": entry.action,
                     "target": f"{entry.table_name}#{entry.row_id}",
-                    "before": entry.before,
-                    "after": entry.after,
+                    **({"before": entry.before, "after": entry.after} if admin else {}),
                 }
                 for entry in entries
             ],

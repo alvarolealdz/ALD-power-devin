@@ -27,7 +27,9 @@
         <input id="{{ field.name }}" name="{{ field.name }}" type="checkbox" value="1" {% if field.value %}checked{% endif %} />
       {% else %}
         <input id="{{ field.name }}" name="{{ field.name }}" type="{{ type }}"
-               value="{{ field.value|default('', true) }}" {% if field.required %}required{% endif %} />
+               value="{{ field.value|default('', true) }}"
+               {% if field.step %}step="{{ field.step }}"{% endif %}
+               {% if field.required %}required{% endif %} />
       {% endif %}
       {% if errors and errors[field.name] %}<p class="error">{{ errors[field.name] }}</p>{% endif %}
     </div>
