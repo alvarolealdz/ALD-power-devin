@@ -301,7 +301,40 @@ def reference_rows(spec: Spec, references: dict[str, Reference]) -> list[str]:
 def model_import_names(spec: Spec) -> str:
     names = [spec.class_name]
     names += [f"{field.name.upper()}_OPTIONS" for field in spec.fields if field.type == ENUM]
+    names += [f"{field.name.upper()}_TONES" for field in spec.fields if field.type == ENUM]
+    names += [
+        f"{field.name.upper()}_TRANSITIONS"
+        for field in spec.fields
+        if field.type == ENUM and field.workflow
+    ]
     return ", ".join(names)
+
+
+def column_kind(field: Field, *, link: bool = False) -> str:
+    if link:
+        return "link"
+    return {
+        NUMBER: "number",
+        DATE: "date",
+        ENUM: "badge",
+    }.get(field.type, "text")
+
+
+def row_value_expression(
+    spec: Spec, field: Field, references: dict[str, Reference], *, link: bool = False
+) -> str:
+    value = f"forms.display({display_expression(field, references)})"
+    if link:
+        return (
+            f'{{"label": {value}, "href": str(request.url_for("{spec.app}_detail", '
+            f"{spec.entity}_id=row.id))}}"
+        )
+    if field.type == ENUM:
+        return (
+            f'(None if row.{field.name} is None else {{"label": {value}, "tone": '
+            f'{field.name.upper()}_TONES.get(row.{field.name}, "neutral")}})'
+        )
+    return value
 
 
 # --- migration ----------------------------------------------------------------

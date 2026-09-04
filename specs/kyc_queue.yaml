@@ -1,0 +1,45 @@
+app: kyc_queue
+entity: kyc_review
+title: KYC review queue
+singular: KYC review
+description: Customer due-diligence cases waiting for a reviewer's decision.
+
+fields:
+  - name: customer_name
+    type: text
+    required: true
+    sensitive: true
+    sample: person_name
+
+  - name: customer_ref
+    type: text
+    required: true
+    sensitive: true
+    sample: reference
+
+  - name: risk_score
+    type: number
+
+  - name: status
+    type: enum
+    required: true
+    options: [pending, approved, rejected, escalated]
+    workflow: true
+    open: [pending, escalated]
+    transitions:
+      pending: [approved, rejected, escalated]
+      escalated: [approved, rejected]
+      approved: []
+      rejected: []
+    tones: {pending: warning, approved: success, rejected: danger, escalated: info}
+
+  - name: submitted_on
+    type: date
+
+  - name: reviewer
+    type: fk
+    target: user
+
+  - name: notes
+    type: text
+    sample: sentence

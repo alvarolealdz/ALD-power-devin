@@ -5,16 +5,17 @@
   method: "post" (default) or "get"
   fields: [{"name": ..., "label": ..., "type": "text|number|date|textarea|select|checkbox",
             "value": ..., "options": [{"value": ..., "label": ...}], "required": bool}]
-  submit_label: button text
+  submit_label: button text; none renders the same fields read-only
   errors: optional {field_name: message}
 #}
+{% set readonly = submit_label is none %}
 <form class="form" action="{{ action }}" method="{{ method|default('post') }}">
   {% for field in fields %}
     {% set type = field.type|default("text") %}
     <div class="field">
       <label for="{{ field.name }}">{{ field.label|default(field.name) }}</label>
       {% if type == "select" %}
-        <select id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %}>
+        <select class="input" id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %} {% if readonly %}disabled{% endif %}>
           {% for option in field.options %}
             <option value="{{ option.value }}" {% if option.value|string == field.value|string %}selected{% endif %}>
               {{ option.label|default(option.value) }}
@@ -22,20 +23,20 @@
           {% endfor %}
         </select>
       {% elif type == "textarea" %}
-        <textarea id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %}>{{ field.value|default("") }}</textarea>
+        <textarea class="input" id="{{ field.name }}" name="{{ field.name }}" {% if field.required %}required{% endif %} {% if readonly %}disabled{% endif %}>{{ field.value|default("") }}</textarea>
       {% elif type == "checkbox" %}
-        <input id="{{ field.name }}" name="{{ field.name }}" type="checkbox" value="1" {% if field.value %}checked{% endif %} />
+        <input class="input" id="{{ field.name }}" name="{{ field.name }}" type="checkbox" value="1" {% if field.value %}checked{% endif %} {% if readonly %}disabled{% endif %} />
       {% else %}
-        <input id="{{ field.name }}" name="{{ field.name }}" type="{{ type }}"
+        <input class="input" id="{{ field.name }}" name="{{ field.name }}" type="{{ type }}"
                value="{{ field.value|default('', true) }}"
                {% if field.step %}step="{{ field.step }}"{% endif %}
-               {% if field.required %}required{% endif %} />
+               {% if field.required %}required{% endif %}
+               {% if readonly %}disabled{% endif %} />
       {% endif %}
       {% if errors and errors[field.name] %}<p class="error">{{ errors[field.name] }}</p>{% endif %}
     </div>
   {% endfor %}
-  {# A page with no submit label is a read-only view of the same fields. #}
-  {% if submit_label is not none %}
-    <button type="submit">{{ submit_label|default("Save", true) }}</button>
+  {% if not readonly %}
+    <button class="btn btn-primary" type="submit">{{ submit_label|default("Save", true) }}</button>
   {% endif %}
 </form>

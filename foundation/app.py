@@ -2,10 +2,11 @@ from typing import Annotated
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse
+from fastapi.routing import NoMatchFound
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from foundation import auth, discovery
+from foundation import audit_view, auth, discovery, forms
 from foundation.config import CURRENT_USER_COOKIE, TEMPLATES_DIR
 from foundation.deps import CurrentUser, DbSession
 from foundation.models import AuditLog
@@ -13,7 +14,7 @@ from foundation.templating import refresh_loader, templates
 
 STATIC_DIR = TEMPLATES_DIR.parent / "static"
 
-app = FastAPI(title="Foundation")
+app = FastAPI(title="PowerDevin")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
@@ -46,52 +47,73 @@ def health(session: DbSession) -> dict[str, object]:
 
 @app.get("/")
 def index(request: Request, session: DbSession, current_user: CurrentUser):
-    users = auth.list_users(session)
     entries = list(session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(25)))
-    # before/after carry whatever the row held, including any app's sensitive
-    # columns, so the payload follows the same rule those columns do.
     admin = auth.is_admin(current_user)
-    payload_columns = (
-        [{"key": "before", "label": "Before"}, {"key": "after", "label": "After"}] if admin else []
-    )
+    mounted = discovery.discover()
+    apps = []
+    for item in mounted:
+        model = item.model
+        count = session.scalar(select(func.count()).select_from(model)) if model else 0
+        open_count = None
+        if model and item.workflow:
+            workflow_field, open_states = item.workflow
+            open_count = session.scalar(
+                select(func.count()).where(getattr(model, workflow_field).in_(open_states))
+            )
+        apps.append(
+            {
+                "title": item.title,
+                "description": item.description,
+                "count": count or 0,
+                "open": open_count,
+                "path": item.router.prefix or f"/{item.name}",
+            }
+        )
+    feed = []
+    for entry in entries:
+        href = None
+        target_label = entry.table_name.replace("_", " ").capitalize()
+        for item in mounted:
+            model = item.model
+            if model is None or model.__tablename__ != entry.table_name:
+                continue
+            target_label = item.singular
+            if entry.action != AuditLog.ACTION_DELETE:
+                try:
+                    href = str(
+                        request.url_for(
+                            f"{item.name}_detail",
+                            **{f"{model.__tablename__}_id": entry.row_id},
+                        )
+                    )
+                except NoMatchFound:
+                    pass
+            break
+        feed.append(
+            {
+                "actor": entry.actor_label,
+                "verb": {
+                    AuditLog.ACTION_INSERT: "created",
+                    AuditLog.ACTION_UPDATE: "updated",
+                    AuditLog.ACTION_DELETE: "deleted",
+                }.get(entry.action, entry.action),
+                "target": f"{target_label} #{entry.row_id}",
+                "href": href,
+                "when": forms.display(entry.created_at),
+                "changes": (
+                    audit_view.changes(entry, admin=admin, session=session)
+                    if entry.action == AuditLog.ACTION_UPDATE
+                    else []
+                ),
+            }
+        )
     return templates.TemplateResponse(
         request,
         "index.html",
         {
             "current_user": current_user,
-            "users": users,
-            "user_columns": [
-                {"key": "id", "label": "ID"},
-                {"key": "display_name", "label": "Name"},
-                {"key": "email", "label": "Email"},
-                {"key": "role", "label": "Role"},
-            ],
-            "user_rows": [
-                {
-                    "id": user.id,
-                    "display_name": user.display_name,
-                    "email": user.email,
-                    "role": user.role.name,
-                }
-                for user in users
-            ],
-            "audit_columns": [
-                {"key": "created_at", "label": "When"},
-                {"key": "actor", "label": "Actor"},
-                {"key": "action", "label": "Action"},
-                {"key": "target", "label": "Row"},
-                *payload_columns,
-            ],
-            "audit_rows": [
-                {
-                    "created_at": entry.created_at.isoformat(timespec="seconds"),
-                    "actor": entry.actor_label,
-                    "action": entry.action,
-                    "target": f"{entry.table_name}#{entry.row_id}",
-                    **({"before": entry.before, "after": entry.after} if admin else {}),
-                }
-                for entry in entries
-            ],
+            "apps": apps,
+            "feed": feed,
         },
     )
 

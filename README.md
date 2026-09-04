@@ -1,4 +1,4 @@
-# ALD-power-devin
+# PowerDevin
 
 Two layers: `foundation/` — identity, roles, an audit trail no write can escape,
 base Jinja templates — and `apps/`, generated on top of it by
@@ -9,8 +9,11 @@ base Jinja templates — and `apps/`, generated on top of it by
 ```bash
 uv sync
 uv run python scaffold/generate.py specs/widgets.yaml   # writes apps/widgets/ + a migration
+uv run python scaffold/generate.py specs/kyc_queue.yaml # writes apps/kyc_queue/ + a migration
 uv run alembic upgrade head                             # create the schema
 uv run python -m foundation.seed                        # roles + admin@example.com
+uv run python scaffold/seed.py specs/widgets.yaml --rows 30
+uv run python scaffold/seed.py specs/kyc_queue.yaml --rows 12
 uv run uvicorn foundation.app:app --reload
 ```
 
@@ -21,7 +24,7 @@ non-admin user and the sensitive field disappears from both the list and the
 form.
 
 - `GET /health` — liveness plus a database round-trip
-- `GET /` — current user, user table, recent audit entries
+- `GET /` — current user, app cards, recent activity
 - `POST /switch-user` — mock auth; the dropdown in the header posts here
 
 Tests: `uv run pytest`. Lint: `uv run ruff check .`.
@@ -47,6 +50,12 @@ fields:
     type: text
     sensitive: true     # admin-only, server-side, in the list and the form
 ```
+
+A field that is both `required` and `sensitive` makes creation admin-only.
+
+An enum field may opt into workflow decisions with `workflow: true` and map
+its options to badge tones with `tones`; non-foreign-key, non-boolean fields
+can use `sample` values or a named sample kind for deterministic seeding.
 
 `uv run python scaffold/generate.py specs/<name>.yaml` writes
 `apps/<name>/{model,routes,templates}` and one Alembic migration chained onto

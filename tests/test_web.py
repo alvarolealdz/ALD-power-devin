@@ -1,9 +1,14 @@
+import re
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from foundation import audit, auth, discovery
+from apps.widgets.model import Widget
+from foundation import audit, auth, discovery, forms
 from foundation.app import app
 from foundation.config import CURRENT_USER_COOKIE
 from foundation.deps import CurrentUser, DbSession
@@ -62,6 +67,14 @@ def test_health(client):
     assert response.json() == {"status": "ok"}
 
 
+def test_display_uses_human_readable_dates():
+    assert forms.display(date(2026, 9, 4)) == "4 Sep 2026"
+    assert forms.display(datetime(2026, 9, 4, 10, 30, tzinfo=UTC)) == "4 Sep 2026, 10:30"
+    assert forms.display(Decimal("20.0000")) == "20"
+    assert forms.display(Decimal("63.5000")) == "63.5"
+    assert forms.display(Decimal("0.2000")) == "0.2"
+
+
 def test_foundation_route_names_are_reserved():
     discovered = [item.name for item in discovery.discover()]
     segments = {
@@ -84,7 +97,10 @@ def test_foundation_route_names_are_reserved():
 def test_index_shows_seeded_admin(client, seeded):
     response = client.get("/")
     assert response.status_code == 200
-    assert "admin@example.com" in response.text
+    assert "<h1>PowerDevin</h1>" in response.text
+    assert "<title>PowerDevin</title>" in response.text
+    assert "Admin (admin)" in response.text
+    assert "Current user:" not in response.text
     assert "Acting as" in response.text
 
 
@@ -97,3 +113,21 @@ def test_switch_user_changes_current_user(client, session, seeded):
     assert response.status_code == 200
     assert client.cookies.get(CURRENT_USER_COOKIE) == str(viewer.id)
     assert "Viewer" in response.text
+
+
+def test_deleted_activity_has_no_dead_detail_link(client, session):
+    response = client.post(
+        "/widgets", data={"label": "To delete", "status": "draft"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    row = session.scalars(select(Widget)).one()
+    assert client.post(f"/widgets/{row.id}/delete", follow_redirects=False).status_code == 303
+
+    home = client.get("/").text
+    deleted = re.search(
+        r'<li class="feed-item">.*?<span class="feed-verb">deleted</span>.*?</li>',
+        home,
+        flags=re.DOTALL,
+    )
+    assert deleted is not None
+    assert f"/widgets/{row.id}" not in deleted.group()

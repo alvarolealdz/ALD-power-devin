@@ -70,6 +70,7 @@ def test_generates_a_whole_app(root, spec_path):
         "templates",
     ]
     assert sorted(path.name for path in (app_dir / "templates").iterdir()) == [
+        "detail.html",
         "form.html",
         "list.html",
     ]
@@ -86,6 +87,19 @@ def test_generated_code_is_normal_code(root, spec_path):
     assert "audit.insert(session, row)" in routes
     assert "audit.update(session, row, values)" in routes
     assert "audit.delete(session, row)" in routes
+
+
+def test_required_sensitive_creation_uses_admin_checks(root, spec_path):
+    spec_path.write_text(
+        "app: private\nentity: record\nfields:\n"
+        "  - name: secret\n    type: text\n    required: true\n    sensitive: true\n"
+        "  - name: label\n    type: text\n"
+    )
+    generate.generate(spec_path, root=root)
+
+    routes = (root / "apps" / "private" / "routes.py").read_text()
+    assert routes.count("auth.require_admin(current_user)") == 2
+    assert routes.count("auth.require_write(current_user)") == 2
 
 
 def test_renaming_the_entity_is_refused(root, spec_path):
@@ -124,6 +138,7 @@ def test_templates_build_on_the_foundation_partials(root, spec_path):
     templates = root / "apps" / "widgets" / "templates"
     assert '{% include "partials/table.html" %}' in (templates / "list.html").read_text()
     assert '{% include "partials/form.html" %}' in (templates / "form.html").read_text()
+    assert '{% include "partials/record.html" %}' in (templates / "detail.html").read_text()
     assert '{% extends "layout.html" %}' in (templates / "list.html").read_text()
 
 
@@ -277,3 +292,31 @@ def test_fk_can_point_at_another_generated_app(root, spec_path):
 
     routes = (root / "apps" / "parts" / "routes.py").read_text()
     assert "from apps.widgets.model import Widget" in routes
+
+
+@pytest.mark.parametrize("app", ["widgets", "kyc_queue"])
+def test_the_spec_alone_reproduces_the_committed_app(tmp_path, app):
+    """Delete an app, regenerate from its spec, get the same bytes back."""
+    repo = generate.APPS_DIR.parent
+    root = tmp_path / "repo"
+    (root / "apps").mkdir(parents=True)
+    (root / "specs").mkdir()
+    versions = root / "migrations" / "versions"
+    versions.mkdir(parents=True)
+    for path in (repo / "migrations" / "versions").glob("*.py"):
+        (versions / path.name).write_text(path.read_text())
+    for other in (repo / "apps").iterdir():
+        if other.is_dir() and other.name != app and not other.name.startswith("_"):
+            (root / "apps" / other.name).mkdir()
+            (root / "apps" / other.name / "model.py").write_text((other / "model.py").read_text())
+    spec_path = root / "specs" / f"{app}.yaml"
+    spec_path.write_text((repo / "specs" / f"{app}.yaml").read_text())
+
+    generate.generate(spec_path, root=root)
+
+    committed = repo / "apps" / app
+    for path in sorted((root / "apps" / app).rglob("*")):
+        if path.is_dir() or path.name == generate.MANIFEST_NAME:
+            continue
+        relative = path.relative_to(root / "apps" / app)
+        assert path.read_text() == (committed / relative).read_text(), relative

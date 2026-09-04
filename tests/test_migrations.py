@@ -28,6 +28,10 @@ def test_upgrade_head_builds_foundation_and_app_tables(tmp_path):
     tables = set(inspect(engine).get_table_names())
     engine.dispose()
     assert {"user", "role", "audit_log", "widget"} <= tables
+    status = next(
+        column for column in inspect(engine).get_columns("widget") if column["name"] == "status"
+    )
+    assert status["nullable"] is False
 
 
 def test_there_is_exactly_one_head():

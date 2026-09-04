@@ -1,0 +1,34 @@
+{# [[ header_text ]] #}
+{% extends "layout.html" %}
+
+{% block content %}
+  <div class="page-head">
+    <div>
+      <p class="crumbs"><a href="{{ list_url }}">[[ spec.title ]]</a> / #{{ row_id }}[% if spec.workflow_field %] <a class="btn btn-ghost btn-sm" href="{{ list_url }}">Back to queue</a>[% endif %]</p>
+      <h1>[[ spec.singular_title ]] #{{ row_id }}</h1>
+    </div>
+    {% if edit_url or delete_url %}
+      <div class="actions">
+        {% if edit_url %}<a class="btn btn-ghost" href="{{ edit_url }}">Edit</a>{% endif %}
+        {% if delete_url %}<form action="{{ delete_url }}" method="post"><button class="btn btn-danger btn-sm" type="submit">Delete</button></form>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+  <div class="detail-grid">
+    <section class="card">
+      <h2>Details</h2>
+      {% include "partials/record.html" %}
+    </section>
+    {% if decisions is defined and decisions and can_decide %}
+      <aside class="card decision">
+        <h2>Decision</h2>
+        <p>Current: {% set badge = current %}{% include "partials/badge.html" %}</p>
+        <form action="{{ decision_url }}" method="post" class="decision-actions">
+          {% for decision in decisions %}
+            <button class="btn tone-{{ decision.tone }}" name="[[ workflow_name ]]" value="{{ decision.value }}">Mark {{ decision.label }}</button>
+          {% endfor %}
+        </form>
+      </aside>
+    {% endif %}
+  </div>
+{% endblock %}

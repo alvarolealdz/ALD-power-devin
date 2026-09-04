@@ -2,11 +2,13 @@
 app: widgets
 entity: widget
 title: Widgets
+description: Example app generated from a neutral spec.
 
 fields:
   - name: label
     type: text
     required: true
+    sample: words
 
   - name: quantity
     type: number
@@ -19,7 +21,11 @@ fields:
 
   - name: status
     type: enum
+    required: true
     options: [draft, review, done]
+    workflow: true
+    open: [draft, review]
+    tones: {draft: neutral, review: warning, done: success}
 
   - name: owner
     type: fk
@@ -28,3 +34,4 @@ fields:
   - name: internal_note
     type: text
     sensitive: true
+    sample: sentence

@@ -3,20 +3,24 @@
 ```yaml
 app: inventory              # optional, defaults to the entity name pluralised
 entity: item                # snake_case, singular
-title: Items                # optional, human label for the screens
+    title: Items                # optional, human label for the screens
+    description: Items awaiting action
 fields:
   - name: label
     type: text
     required: true
-  - name: category
+    - name: category
     type: enum
     options: [alpha, beta]
+    workflow: true
+    tones: {alpha: info, beta: success}
   - name: owner
     type: fk
     target: user
-  - name: internal_note
+    - name: internal_note
     type: text
     sensitive: true
+    sample: sentence
 ```
 
 Anything else is a spec error, raised before a single file is written.
@@ -55,8 +59,25 @@ _RESERVED_APP_NAMES = frozenset(
     }
 )
 _FOUNDATION_TABLES = frozenset({"user", "role", "audit_log"})
-_FIELD_KEYS = frozenset({"name", "type", "label", "required", "sensitive", "options", "target"})
-_SPEC_KEYS = frozenset({"app", "entity", "title", "fields"})
+_TONES = frozenset({"neutral", "info", "success", "warning", "danger"})
+_SAMPLE_KINDS = frozenset({"person_name", "reference", "sentence", "words"})
+_FIELD_KEYS = frozenset(
+    {
+        "name",
+        "type",
+        "label",
+        "required",
+        "sensitive",
+        "options",
+        "target",
+        "workflow",
+        "open",
+        "transitions",
+        "tones",
+        "sample",
+    }
+)
+_SPEC_KEYS = frozenset({"app", "entity", "title", "description", "singular", "fields"})
 
 
 class SpecError(ValueError):
@@ -72,6 +93,11 @@ class Field:
     sensitive: bool = False
     options: tuple[str, ...] = ()
     target: str | None = None
+    workflow: bool = False
+    open: tuple[str, ...] = ()
+    transitions: dict[str, tuple[str, ...]] = dataclass_field(default_factory=dict)
+    tones: tuple[tuple[str, str], ...] = ()
+    sample: str | tuple[str, ...] | None = None
 
     @property
     def column_name(self) -> str:
@@ -82,12 +108,27 @@ class Field:
     def is_reference(self) -> bool:
         return self.type == FK
 
+    def tone(self, option: str) -> str:
+        return dict(self.tones).get(option, "neutral")
+
+    @property
+    def closed(self) -> tuple[str, ...]:
+        return tuple(option for option in self.options if option not in self.open)
+
+    def allowed_from(self, state: str) -> tuple[str, ...]:
+        configured = self.transitions.get(state)
+        if configured is not None:
+            return configured
+        return tuple(option for option in self.options if option != state)
+
 
 @dataclass(frozen=True)
 class Spec:
     app: str
     entity: str
     title: str
+    description: str = ""
+    singular: str = ""
     fields: tuple[Field, ...] = dataclass_field(default_factory=tuple)
 
     @property
@@ -104,7 +145,7 @@ class Spec:
 
     @property
     def singular_title(self) -> str:
-        return _humanise(self.entity)
+        return self.singular or _humanise(self.entity)
 
     @property
     def sensitive_fields(self) -> tuple[Field, ...]:
@@ -114,6 +155,15 @@ class Spec:
     def visible_fields(self) -> tuple[Field, ...]:
         """The fields everyone sees. Sensitive ones are added back for admins only."""
         return tuple(field for field in self.fields if not field.sensitive)
+
+    @property
+    def create_is_admin_only(self) -> bool:
+        """A required field nobody but an admin can see means nobody but an admin can create."""
+        return any(field.required and field.sensitive for field in self.fields)
+
+    @property
+    def workflow_field(self) -> Field | None:
+        return next((field for field in self.fields if field.workflow), None)
 
 
 def load(path: str | Path) -> Spec:
@@ -137,6 +187,8 @@ def parse(raw: dict[str, Any]) -> Spec:
     if app in _RESERVED_APP_NAMES:
         raise SpecError(f"app {app!r} would shadow a foundation route")
     title = str(raw.get("title") or _humanise(app))
+    description = _description(raw.get("description"))
+    singular = _singular(raw.get("singular"))
 
     raw_fields = raw.get("fields")
     if not isinstance(raw_fields, list) or not raw_fields:
@@ -144,7 +196,17 @@ def parse(raw: dict[str, Any]) -> Spec:
 
     fields = tuple(_parse_field(item, index) for index, item in enumerate(raw_fields))
     _reject_duplicates(fields)
-    return Spec(app=app, entity=entity, title=title, fields=fields)
+    workflow_fields = [field for field in fields if field.workflow]
+    if len(workflow_fields) > 1:
+        raise SpecError("a spec may have at most one workflow field")
+    return Spec(
+        app=app,
+        entity=entity,
+        title=title,
+        description=description,
+        singular=singular,
+        fields=fields,
+    )
 
 
 def _parse_field(raw: Any, index: int) -> Field:
@@ -169,6 +231,13 @@ def _parse_field(raw: Any, index: int) -> Field:
 
     options = _parse_options(raw, where, field_type)
     target = _parse_target(raw, where, field_type)
+    workflow = _flag(raw, "workflow", where)
+    if workflow and field_type != ENUM:
+        raise SpecError(f"{where}: workflow only applies to enum fields")
+    open_states = _parse_open(raw, where, workflow, options)
+    transitions = _parse_transitions(raw, where, workflow, options)
+    tones = _parse_tones(raw, where, field_type, options)
+    sample = _parse_sample(raw, where, field_type)
     required = _flag(raw, "required", where)
     sensitive = _flag(raw, "sensitive", where)
     if required and field_type == BOOL:
@@ -176,16 +245,13 @@ def _parse_field(raw: Any, index: int) -> Field:
             f"{where}: a bool cannot be required — an unchecked box submits nothing, "
             "so the value would always be allowed to be false"
         )
-    if required and sensitive:
-        raise SpecError(
-            f"{where}: a field cannot be both required and sensitive — "
-            "non-admins never see it, so they could never satisfy it"
-        )
     if sensitive and field_type == BOOL:
         raise SpecError(
             f"{where}: a bool cannot be sensitive — an unchecked box and a hidden one "
             "look the same on submit"
         )
+    if workflow and not required:
+        raise SpecError(f"{where}: workflow fields must be required")
 
     return Field(
         name=name,
@@ -195,6 +261,11 @@ def _parse_field(raw: Any, index: int) -> Field:
         sensitive=sensitive,
         options=options,
         target=target,
+        workflow=workflow,
+        open=open_states,
+        transitions=transitions,
+        tones=tones,
+        sample=sample,
     )
 
 
@@ -236,6 +307,135 @@ def _parse_target(raw: dict[str, Any], where: str, field_type: str) -> str | Non
     if not target:
         raise SpecError(f"{where}: fk fields need a target table")
     return _identifier(target, f"{where}.target")
+
+
+def _parse_tones(
+    raw: dict[str, Any], where: str, field_type: str, options: tuple[str, ...]
+) -> tuple[tuple[str, str], ...]:
+    tones = raw.get("tones")
+    if tones is None:
+        if field_type == ENUM:
+            return ()
+        return ()
+    if field_type != ENUM:
+        raise SpecError(f"{where}: tones only apply to enum fields")
+    if not isinstance(tones, dict):
+        raise SpecError(f"{where}: tones must be a mapping")
+    parsed: list[tuple[str, str]] = []
+    for option, tone in tones.items():
+        if option not in options:
+            raise SpecError(f"{where}: tone key {option!r} is not an enum option")
+        if tone not in _TONES:
+            raise SpecError(f"{where}: tone must be one of {', '.join(sorted(_TONES))}")
+        parsed.append((option, tone))
+    return tuple(parsed)
+
+
+def _parse_open(
+    raw: dict[str, Any],
+    where: str,
+    workflow: bool,
+    options: tuple[str, ...],
+) -> tuple[str, ...]:
+    open_states = raw.get("open")
+    if open_states is None:
+        return (options[0],) if workflow else ()
+    if not workflow:
+        raise SpecError(f"{where}: open only applies to workflow fields")
+    if not isinstance(open_states, list) or not open_states:
+        raise SpecError(f"{where}: open must be a non-empty list")
+    values = tuple(str(option) for option in open_states)
+    if len(set(values)) != len(values):
+        raise SpecError(f"{where}: open states cannot contain duplicates")
+    if any(option not in options for option in values):
+        raise SpecError(f"{where}: open state must be one of the enum options")
+    if len(values) == len(options):
+        raise SpecError(f"{where}: open states must leave at least one closed option")
+    return values
+
+
+def _parse_transitions(
+    raw: dict[str, Any],
+    where: str,
+    workflow: bool,
+    options: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    if "transitions" not in raw:
+        return {}
+    transitions = raw["transitions"]
+    if not workflow:
+        raise SpecError(f"{where}: transitions only applies to workflow fields")
+    if not isinstance(transitions, dict):
+        raise SpecError(f"{where}: transitions must be a mapping")
+    parsed: dict[str, tuple[str, ...]] = {}
+    for state, targets in transitions.items():
+        if state not in options:
+            raise SpecError(f"{where}: transition state must be one of the enum options")
+        if not isinstance(targets, list):
+            raise SpecError(f"{where}: transition targets must be lists")
+        values = tuple(str(target) for target in targets)
+        if len(set(values)) != len(values):
+            raise SpecError(f"{where}: transition targets cannot contain duplicates")
+        if state in values:
+            raise SpecError(f"{where}: a state cannot transition to itself")
+        if any(target not in options for target in values):
+            raise SpecError(f"{where}: transition target must be one of the enum options")
+        parsed[state] = values
+    return parsed
+
+
+def _parse_sample(raw: dict[str, Any], where: str, field_type: str) -> str | tuple[str, ...] | None:
+    sample = raw.get("sample")
+    if sample is None:
+        return None
+    if isinstance(sample, str):
+        if sample not in _SAMPLE_KINDS:
+            raise SpecError(f"{where}: unknown sample kind {sample!r}")
+        if field_type != TEXT:
+            raise SpecError(f"{where}: sample kind {sample!r} only applies to text fields")
+        return sample
+    if not isinstance(sample, list):
+        raise SpecError(f"{where}: sample must be a kind or a list of strings")
+    if field_type not in (TEXT, NUMBER, DATE):
+        raise SpecError(f"{where}: sample lists only apply to text, number, or date fields")
+    if not sample:
+        raise SpecError(f"{where}: sample list cannot be empty")
+    if len(sample) > 50:
+        raise SpecError(f"{where}: sample list cannot contain more than 50 items")
+    values = []
+    for value in sample:
+        if not isinstance(value, str) or not value:
+            raise SpecError(f"{where}: sample list values must be non-empty strings")
+        if len(value) > 200:
+            raise SpecError(f"{where}: sample values must be at most 200 characters")
+        values.append(value)
+    return tuple(values)
+
+
+def _description(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise SpecError(f"description: expected a string, got {value!r}")
+    value = value.strip()
+    if len(value) > 200:
+        raise SpecError("description: must be at most 200 characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise SpecError("description: must not contain control characters")
+    return value
+
+
+def _singular(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise SpecError(f"singular: expected a string, got {value!r}")
+    value = value.strip()
+    if len(value) > 60:
+        raise SpecError("singular: must be at most 60 characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise SpecError("singular: must not contain control characters")
+    return value
 
 
 def _flag(raw: dict[str, Any], key: str, where: str) -> bool:

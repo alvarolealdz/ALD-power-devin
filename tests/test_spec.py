@@ -30,6 +30,232 @@ def test_sensitive_fields_are_split_out():
     assert [field.name for field in spec.sensitive_fields] == ["note"]
 
 
+def test_description_workflow_tones_and_samples_are_parsed():
+    spec = parse(
+        {
+            **MINIMAL,
+            "description": "  A useful description.  ",
+            "fields": [
+                {"name": "label", "type": "text", "sample": ["One", "Two"]},
+                {
+                    "name": "status",
+                    "type": "enum",
+                    "options": ["draft", "done"],
+                    "workflow": True,
+                    "required": True,
+                    "open": ["draft"],
+                    "tones": {"done": "success"},
+                },
+            ],
+        }
+    )
+    assert spec.description == "A useful description."
+    assert spec.workflow_field is spec.fields[1]
+    assert spec.fields[1].open == ("draft",)
+    assert spec.fields[1].closed == ("done",)
+    assert spec.fields[1].tone("done") == "success"
+    assert spec.fields[1].tone("draft") == "neutral"
+    assert spec.fields[0].sample == ("One", "Two")
+
+
+def test_singular_title_is_parsed_and_overrides_the_default():
+    spec = parse({**MINIMAL, "singular": "A widget"})
+    assert spec.singular == "A widget"
+    assert spec.singular_title == "A widget"
+
+
+@pytest.mark.parametrize(
+    "singular",
+    ["x" * 61, "line\nbreak"],
+)
+def test_singular_title_is_validated(singular):
+    with pytest.raises(SpecError, match="singular"):
+        parse({**MINIMAL, "singular": singular})
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        (
+            {"name": "status", "type": "enum", "options": ["draft"], "tones": {"draft": "bad"}},
+            "tone",
+        ),
+        ({"name": "label", "type": "text", "workflow": True}, "workflow"),
+        ({"name": "label", "type": "text", "sample": "unknown"}, "sample"),
+    ],
+)
+def test_new_field_options_are_validated(field, message):
+    with pytest.raises(SpecError, match=message):
+        parse({**MINIMAL, "fields": [field]})
+
+
+def test_empty_sample_lists_are_rejected():
+    with pytest.raises(SpecError, match="sample list cannot be empty"):
+        parse({**MINIMAL, "fields": [{"name": "label", "type": "text", "sample": []}]})
+
+
+def test_two_workflow_fields_are_rejected():
+    with pytest.raises(SpecError, match="at most one"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "first",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["a"],
+                        "workflow": True,
+                    },
+                    {
+                        "name": "second",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["b"],
+                        "workflow": True,
+                    },
+                ],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("open_states", "message"),
+    [
+        ([], "non-empty"),
+        (["draft", "draft"], "duplicates"),
+        (["unknown"], "one of"),
+        (["draft", "done"], "closed"),
+    ],
+)
+def test_workflow_open_states_are_validated(open_states, message):
+    with pytest.raises(SpecError, match=message):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["draft", "done"],
+                        "workflow": True,
+                        "open": open_states,
+                    }
+                ],
+            }
+        )
+
+
+def test_open_states_are_rejected_without_workflow():
+    with pytest.raises(SpecError, match="only applies"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "options": ["draft", "done"],
+                        "open": ["draft"],
+                    }
+                ],
+            }
+        )
+
+
+def test_workflow_transitions_parse_and_default_allowed_targets():
+    spec = parse(
+        {
+            **MINIMAL,
+            "fields": [
+                {
+                    "name": "status",
+                    "type": "enum",
+                    "required": True,
+                    "options": ["pending", "approved", "rejected", "escalated"],
+                    "workflow": True,
+                    "transitions": {
+                        "pending": ["approved", "escalated"],
+                        "approved": [],
+                    },
+                }
+            ],
+        }
+    )
+    field = spec.workflow_field
+    assert field is not None
+    assert field.transitions == {
+        "pending": ("approved", "escalated"),
+        "approved": (),
+    }
+    assert field.allowed_from("pending") == ("approved", "escalated")
+    assert field.allowed_from("approved") == ()
+    assert field.allowed_from("rejected") == ("pending", "approved", "escalated")
+
+
+@pytest.mark.parametrize(
+    ("transitions", "message"),
+    [
+        ({"unknown": ["approved"]}, "transition state"),
+        ({"pending": ["unknown"]}, "transition target"),
+        ({"pending": ["pending"]}, "itself"),
+    ],
+)
+def test_workflow_transitions_are_validated(transitions, message):
+    with pytest.raises(SpecError, match=message):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["pending", "approved"],
+                        "workflow": True,
+                        "transitions": transitions,
+                    }
+                ],
+            }
+        )
+
+
+def test_transitions_are_rejected_without_workflow():
+    with pytest.raises(SpecError, match="only applies"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["pending", "approved"],
+                        "transitions": {"pending": ["approved"]},
+                    }
+                ],
+            }
+        )
+
+
+def test_workflow_fields_are_required():
+    with pytest.raises(SpecError, match="workflow fields must be required"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "options": ["pending", "approved"],
+                        "workflow": True,
+                    }
+                ],
+            }
+        )
+
+
 @pytest.mark.parametrize(
     ("raw", "message"),
     [
@@ -66,15 +292,15 @@ def test_bad_specs_are_rejected(raw, message):
         parse(raw)
 
 
-def test_a_field_cannot_be_required_and_sensitive():
-    """A non-admin never sees it, so requiring it would lock them out of the form."""
-    with pytest.raises(SpecError, match="required and sensitive"):
-        parse(
-            {
-                **MINIMAL,
-                "fields": [{"name": "note", "type": "text", "required": True, "sensitive": True}],
-            }
-        )
+def test_required_sensitive_fields_make_create_admin_only():
+    spec = parse(
+        {
+            **MINIMAL,
+            "fields": [{"name": "note", "type": "text", "required": True, "sensitive": True}],
+        }
+    )
+    assert spec.create_is_admin_only is True
+    assert parse(MINIMAL).create_is_admin_only is False
 
 
 def test_a_bool_cannot_be_sensitive():

@@ -2,10 +2,11 @@
   "app": "widgets",
   "files": {
     "apps/widgets/__init__.py": "083c830099f3b8253173fb332a2ffe3d6bbdb0f03ec077a6b6ec1d560cde87bd",
-    "apps/widgets/model.py": "df227acda3fbe47d983ae9518842c44a17327904298115aa33fdd9b39d72385b",
-    "apps/widgets/routes.py": "cd7330ea5bb029c4581ac390f862b58e9afda2d3044caed4e11dab974becfa2e",
-    "apps/widgets/templates/form.html": "4afbf308aa91af5188b090e9d59fec17bd608318ccb8dbb83e2c51daaa6e25af",
-    "apps/widgets/templates/list.html": "8b9cee8f47cea9fd80d96c0707fabbf71eb43cb89c78ddc2525592b050bec432",
+    "apps/widgets/model.py": "c4f7ef710ff67447539d68a30989286b05ecdadb28d205cbbd4d5f5f7e3de124",
+    "apps/widgets/routes.py": "81faeea19cacd2422936a52fc810c5e17ea21f63277de5ab9d01af35213c3391",
+    "apps/widgets/templates/detail.html": "d0b2b3748c9e763a99873273153dba8bcca716f60ab1e184cf1c1b6a1afa521a",
+    "apps/widgets/templates/form.html": "99aa37e53059ac64d7edf08aec2e1a6602d9402fc31ced53dbf0a33a483c2cef",
+    "apps/widgets/templates/list.html": "aed29a0e026840cee5bc7ff2953b5f1b204e97388881399ec3f31dcef6d11e52",
     "migrations/versions/7f03ffc9f34f_create_widgets.py": "29eb4565eb7f79b8385d9379c600ff5deb823cec0ed057dee3f048d8bc78b9d2"
   },
   "spec": "specs/widgets.yaml"

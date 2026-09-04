@@ -43,6 +43,27 @@ class DiscoveredApp:
         """What the nav calls it. Apps set ``TITLE`` in routes.py; this is the fallback."""
         return getattr(self.module("routes"), "TITLE", self.name.replace("_", " ").capitalize())
 
+    @property
+    def description(self) -> str:
+        return getattr(self.module("routes"), "DESCRIPTION", "")
+
+    @property
+    def singular(self) -> str:
+        return getattr(self.module("routes"), "SINGULAR", self.name.replace("_", " ").capitalize())
+
+    @property
+    def workflow(self) -> tuple[str, tuple[str, ...]] | None:
+        module = self.module("routes")
+        field = getattr(module, "WORKFLOW_FIELD", None)
+        open_states = getattr(module, "OPEN_STATES", None)
+        if not field or not open_states:
+            return None
+        return field, tuple(open_states)
+
+    @property
+    def model(self):
+        return getattr(self.module("routes"), "MODEL", None)
+
 
 def discover(apps_dir: Path = APPS_DIR) -> list[DiscoveredApp]:
     """Every importable app directory, in a stable order."""
