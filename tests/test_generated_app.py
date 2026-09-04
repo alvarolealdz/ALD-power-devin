@@ -280,23 +280,71 @@ def test_a_decimal_quantity_survives_the_round_trip(client, session):
 
 def test_bool_toggle_is_audited_and_role_protected(client, session, editor, viewer, widget):
     row = session.scalars(select(Widget)).one()
-    before = row.active
-    response = client.post(
-        f"/widgets/{row.id}/toggle/active",
-        data={"next": "/widgets"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-    assert response.headers["location"] == "/widgets"
-    session.refresh(row)
-    assert row.active is not before
-    assert session.scalars(
+    assert row.active is False
+    listing = client.get("/widgets")
+    assert 'name="value"' in listing.text
+    assert 'value="1"' in listing.text
+    assert 'name="expected" value="0"' in listing.text
+    updates_before = session.scalars(
         select(AuditLog).where(
             AuditLog.table_name == "widget",
             AuditLog.row_id == str(row.id),
             AuditLog.action == AuditLog.ACTION_UPDATE,
         )
-    ).one()
+    ).all()
+    audit.update(session, row, {"active": True}, actor=editor)
+    stale = client.post(
+        f"/widgets/{row.id}/toggle/active",
+        data={"expected": "0"},
+        follow_redirects=False,
+    )
+    assert stale.status_code == 409
+    assert "already changed by someone else" in stale.text
+    session.refresh(row)
+    assert row.active is True
+    assert (
+        len(
+            session.scalars(
+                select(AuditLog).where(
+                    AuditLog.table_name == "widget",
+                    AuditLog.row_id == str(row.id),
+                    AuditLog.action == AuditLog.ACTION_UPDATE,
+                )
+            ).all()
+        )
+        == len(updates_before) + 1
+    )
+
+    response = client.post(
+        f"/widgets/{row.id}/toggle/active",
+        data={"value": "1", "expected": "1", "next": "/widgets"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/widgets"
+    session.refresh(row)
+    assert row.active is True
+    assert (
+        len(
+            session.scalars(
+                select(AuditLog).where(
+                    AuditLog.table_name == "widget",
+                    AuditLog.row_id == str(row.id),
+                    AuditLog.action == AuditLog.ACTION_UPDATE,
+                )
+            ).all()
+        )
+        == len(updates_before) + 1
+    )
+
+    response = client.post(
+        f"/widgets/{row.id}/toggle/active",
+        data={"expected": "1", "next": "/widgets"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    session.refresh(row)
+    assert row.active is False
 
     as_user(client, viewer)
     assert client.post(f"/widgets/{row.id}/toggle/active").status_code == 403

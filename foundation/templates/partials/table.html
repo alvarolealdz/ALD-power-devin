@@ -38,9 +38,12 @@
               <td class="cell-toggle">
                 <form method="post" action="{{ v.action }}" class="toggle">
                   <input type="hidden" name="next" value="{{ v.next }}">
+                  <input type="hidden" name="expected" value="{{ '1' if v.checked else '0' }}">
                   <input
                     type="checkbox"
                     class="switch"
+                    name="value"
+                    value="1"
                     {% if v.checked %}checked{% endif %}
                     {% if v.disabled %}disabled{% endif %}
                     data-autosubmit

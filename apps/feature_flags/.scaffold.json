@@ -3,7 +3,7 @@
   "files": {
     "apps/feature_flags/__init__.py": "9cea6e29b1bdd968bff582bce0442b47e2bc097aa28573d56e207308b7fa0eee",
     "apps/feature_flags/model.py": "f648352dcd316cc3d84e60961d70f608d62ab24b1fcb17bfe2e3356dad9e564b",
-    "apps/feature_flags/routes.py": "07e2512316861773d7cb718a8362118888a433fd3866c4780240f32487d10579",
+    "apps/feature_flags/routes.py": "b52488fe110f6b5eee9f51b7e05ce0eae3a6858070159d89bd45ded04e1f7f1b",
     "apps/feature_flags/templates/detail.html": "d38313cd800cbe01a586c86c39374c5bf5df6b8657219ba945b0bc70558d2fcd",
     "apps/feature_flags/templates/form.html": "98c79de249bf2192d6e38beb996808055fb56937956bd17d0b0106c3f146d66a",
     "apps/feature_flags/templates/list.html": "106cd3fe45f2de0dbee1838bbf3d2481f932b7190070e6dd6fabfd5f38f6e4f7",

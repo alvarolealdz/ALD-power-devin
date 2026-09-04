@@ -441,6 +441,10 @@ def _validate_unit_fields(fields: tuple[Field, ...]) -> None:
             raise SpecError(
                 f"fields[{fields.index(field)}]: unit_field cannot be sensitive when the number is not"
             )
+        if field.sensitive and not unit.sensitive:
+            raise SpecError(
+                f"fields[{fields.index(field)}]: unit_field must be sensitive when the number is"
+            )
 
 
 def _parse_sample(
@@ -467,6 +471,8 @@ def _parse_sample(
             raise SpecError(f"{where}: number sample min and max must be numeric") from error
         if not minimum.is_finite() or not maximum.is_finite() or minimum >= maximum:
             raise SpecError(f"{where}: number sample min must be less than max")
+        if abs(minimum) >= Decimal(10**14) or abs(maximum) >= Decimal(10**14):
+            raise SpecError(f"{where}: number sample bounds must fit Numeric(18, 4)")
         return {"min": minimum, "max": maximum}
     if not isinstance(sample, list):
         raise SpecError(f"{where}: sample must be a kind, range, or list of strings")
