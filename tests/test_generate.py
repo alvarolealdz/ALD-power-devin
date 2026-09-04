@@ -294,7 +294,9 @@ def test_fk_can_point_at_another_generated_app(root, spec_path):
     assert "from apps.widgets.model import Widget" in routes
 
 
-@pytest.mark.parametrize("app", ["widgets", "kyc_queue"])
+@pytest.mark.parametrize(
+    "app", ["widgets", "kyc_queue", "refunds", "feature_flags", "vendor_contracts"]
+)
 def test_the_spec_alone_reproduces_the_committed_app(tmp_path, app):
     """Delete an app, regenerate from its spec, get the same bytes back."""
     repo = generate.APPS_DIR.parent
