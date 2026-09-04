@@ -17,6 +17,7 @@ from foundation.templating import templates
 
 TITLE = "[[ spec.title ]]"
 DESCRIPTION = "[[ spec.description|replace('\\', '\\\\')|replace('"', '\\"') ]]"
+SINGULAR = "[[ spec.singular_title|replace('\\', '\\\\')|replace('"', '\\"') ]]"
 MODEL = [[ spec.class_name ]]
 
 router = APIRouter(prefix="[[ spec.mount_path ]]", tags=["[[ spec.app ]]"])
@@ -32,51 +33,57 @@ def _get(session: Session, [[ spec.entity ]]_id: int) -> [[ spec.class_name ]]:
 def _columns(admin: bool) -> list[dict[str, str]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
     columns = []
-[% for field in visible_fields %]
-    columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": "[[ column_kinds[field.name] ]]"})
-[% endfor %]
-[% if spec.sensitive_fields %]
+[% for field in spec.fields %]
+[% if field.sensitive %]
     if admin:
-[% for field in spec.sensitive_fields %]
-        columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": "[[ column_kinds[field.name] ]]"})
-[% endfor %]
+        columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": ("link" if not columns else "[[ column_kinds[field.name] ]]")})
+[% else %]
+    columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]", "kind": ("link" if not columns else "[[ column_kinds[field.name] ]]")})
 [% endif %]
+[% endfor %]
     columns.append({"key": "id", "label": "ID", "kind": "id"})
     return columns
 
 
 def _row(request: Request, row: [[ spec.class_name ]], admin: bool) -> dict[str, object]:
     data: dict[str, object] = {
-[% for field in visible_fields %]
+[% for field in spec.fields if not field.sensitive %]
         "[[ field.name ]]": [[ field_value_expressions[field.name] ]],
 [% endfor %]
-        "edit_url": str(request.url_for("[[ spec.app ]]_edit", [[ spec.entity ]]_id=row.id)),
     }
 [% if spec.sensitive_fields %]
     if admin:
-[% for field in spec.sensitive_fields %]
+[% for field in spec.fields if field.sensitive %]
         data["[[ field.name ]]"] = [[ field_value_expressions[field.name] ]]
 [% endfor %]
 [% endif %]
-    return data
+    ordered = {key: data[key] for key in [[ spec.fields|map(attribute="name")|list ]] if key in data}
+    if ordered:
+        first_key = next(iter(ordered))
+        first_value = ordered[first_key]
+        ordered[first_key] = {
+            "label": first_value["label"] if isinstance(first_value, dict) else first_value,
+            "href": str(request.url_for("[[ spec.app ]]_detail", [[ spec.entity ]]_id=row.id)),
+        }
+    ordered["id"] = row.id
+    ordered["edit_url"] = str(request.url_for("[[ spec.app ]]_edit", [[ spec.entity ]]_id=row.id))
+    return ordered
 
 
 def _items(row: [[ spec.class_name ]], admin: bool) -> list[dict[str, object]]:
-    items: list[dict[str, object]] = [
-[% for field in visible_fields %]
-        {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]},
-[% endfor %]
-    ]
-[% if spec.sensitive_fields %]
+    items: list[dict[str, object]] = []
+[% for field in spec.fields %]
+[% if field.sensitive %]
     if admin:
-        items.extend(
-            [
-[% for field in spec.sensitive_fields %]
-                {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]},
-[% endfor %]
-            ]
+        items.append(
+            {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]}
         )
+[% else %]
+    items.append(
+        {"label": "[[ field.label ]]", "value": [[ detail_value_expressions[field.name] ]][% if field.type == "enum" %], "kind": "badge"[% endif %]}
+    )
 [% endif %]
+[% endfor %]
     return items
 
 
@@ -194,7 +201,7 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "empty": {
                 "title": "No [[ spec.title|lower ]] yet",
                 "text": DESCRIPTION or None,
-                "cta": {"label": "New [[ spec.singular_title|lower ]]", "href": new_url}
+                "cta": {"label": "New [[ spec.singular_title ]]", "href": new_url}
                 if new_url
                 else None,
             },
@@ -279,7 +286,7 @@ def detail_row(
         request,
         "[[ spec.app ]]/detail.html",
         {
-            "title": "[[ spec.singular_title ]] {}".format(row.id),
+            "title": "{} {}".format(SINGULAR, row.id),
             "row_id": row.id,
             "items": _items(row, admin),
             "list_url": str(request.url_for("[[ spec.app ]]_list")),

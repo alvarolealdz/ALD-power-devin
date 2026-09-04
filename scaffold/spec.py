@@ -75,7 +75,7 @@ _FIELD_KEYS = frozenset(
         "sample",
     }
 )
-_SPEC_KEYS = frozenset({"app", "entity", "title", "description", "fields"})
+_SPEC_KEYS = frozenset({"app", "entity", "title", "description", "singular", "fields"})
 
 
 class SpecError(ValueError):
@@ -114,6 +114,7 @@ class Spec:
     entity: str
     title: str
     description: str = ""
+    singular: str = ""
     fields: tuple[Field, ...] = dataclass_field(default_factory=tuple)
 
     @property
@@ -130,7 +131,7 @@ class Spec:
 
     @property
     def singular_title(self) -> str:
-        return _humanise(self.entity)
+        return self.singular or _humanise(self.entity)
 
     @property
     def sensitive_fields(self) -> tuple[Field, ...]:
@@ -173,6 +174,7 @@ def parse(raw: dict[str, Any]) -> Spec:
         raise SpecError(f"app {app!r} would shadow a foundation route")
     title = str(raw.get("title") or _humanise(app))
     description = _description(raw.get("description"))
+    singular = _singular(raw.get("singular"))
 
     raw_fields = raw.get("fields")
     if not isinstance(raw_fields, list) or not raw_fields:
@@ -183,7 +185,14 @@ def parse(raw: dict[str, Any]) -> Spec:
     workflow_fields = [field for field in fields if field.workflow]
     if len(workflow_fields) > 1:
         raise SpecError("a spec may have at most one workflow field")
-    return Spec(app=app, entity=entity, title=title, description=description, fields=fields)
+    return Spec(
+        app=app,
+        entity=entity,
+        title=title,
+        description=description,
+        singular=singular,
+        fields=fields,
+    )
 
 
 def _parse_field(raw: Any, index: int) -> Field:
@@ -338,6 +347,19 @@ def _description(value: Any) -> str:
         raise SpecError("description: must be at most 200 characters")
     if any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise SpecError("description: must not contain control characters")
+    return value
+
+
+def _singular(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise SpecError(f"singular: expected a string, got {value!r}")
+    value = value.strip()
+    if len(value) > 60:
+        raise SpecError("singular: must be at most 60 characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise SpecError("singular: must not contain control characters")
     return value
 
 

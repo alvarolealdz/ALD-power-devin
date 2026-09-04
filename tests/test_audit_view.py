@@ -35,3 +35,25 @@ def test_changes_render_each_action_and_hide_sensitive_columns():
     assert summary(updated) == "updated 2 fields"
     assert summary(deleted) == "deleted"
     assert changes(updated, admin=True)[1].after == "changed"
+
+
+def test_changes_format_dates_and_foreign_keys(session, seeded):
+    updated = AuditLog(
+        table_name="kyc_review",
+        action=AuditLog.ACTION_UPDATE,
+        before={
+            "submitted_on": "2026-01-01",
+            "reviewer_id": None,
+        },
+        after={
+            "submitted_on": "2026-01-02",
+            "reviewer_id": seeded.id,
+        },
+    )
+
+    result = changes(updated, admin=True, session=session)
+
+    assert [(change.field, change.before, change.after) for change in result] == [
+        ("Submitted on", "1 Jan 2026", "2 Jan 2026"),
+        ("Reviewer", "", "Admin"),
+    ]

@@ -1,6 +1,7 @@
 app: kyc_queue
 entity: kyc_review
 title: KYC review queue
+singular: KYC review
 description: Customer due-diligence cases waiting for a reviewer's decision.
 
 fields:

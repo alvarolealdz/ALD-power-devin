@@ -15,7 +15,13 @@ def test_seed_is_deterministic_and_refuses_existing_rows(engine, session, seeded
     seed_module.seed(spec_path, rows=30, seed=1, append=False)
 
     assert session.scalar(select(func.count()).select_from(Widget)) == 30
-    assert {row.status for row in session.scalars(select(Widget))} == {"draft", "review", "done"}
+    rows = session.scalars(select(Widget)).all()
+    assert {row.status for row in rows} == {"draft", "review", "done"}
+    counts = {
+        status: sum(row.status == status for row in rows) for status in ("draft", "review", "done")
+    }
+    assert counts["draft"] > counts["review"]
+    assert counts["draft"] > counts["done"]
     assert (
         session.scalar(
             select(func.count())

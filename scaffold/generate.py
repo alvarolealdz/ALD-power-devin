@@ -157,13 +157,7 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
             field.name: codegen.display_expression(field, references) for field in spec.fields
         },
         field_value_expressions={
-            field.name: codegen.row_value_expression(
-                spec,
-                field,
-                references,
-                link=field.name
-                == (spec.visible_fields[0].name if spec.visible_fields else spec.fields[0].name),
-            )
+            field.name: codegen.row_value_expression(spec, field, references)
             for field in spec.fields
         },
         detail_value_expressions={
@@ -178,14 +172,7 @@ def render(spec: Spec, *, spec_path: Path, root: Path) -> dict[Path, str]:
         reference_rows=codegen.reference_rows(spec, references),
         form_params=[codegen.form_param(field) for field in spec.fields],
         submitted_dict=codegen.submitted_dict(spec),
-        column_kinds={
-            field.name: codegen.column_kind(
-                field,
-                link=field.name
-                == (spec.visible_fields[0].name if spec.visible_fields else spec.fields[0].name),
-            )
-            for field in spec.fields
-        },
+        column_kinds={field.name: codegen.column_kind(field) for field in spec.fields},
         detail_fields=spec.visible_fields,
         detail_sensitive_fields=spec.sensitive_fields,
     )

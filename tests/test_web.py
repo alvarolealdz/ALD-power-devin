@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -67,6 +68,9 @@ def test_health(client):
 def test_display_uses_human_readable_dates():
     assert forms.display(date(2026, 9, 4)) == "4 Sep 2026"
     assert forms.display(datetime(2026, 9, 4, 10, 30, tzinfo=UTC)) == "4 Sep 2026, 10:30"
+    assert forms.display(Decimal("20.0000")) == "20"
+    assert forms.display(Decimal("63.5000")) == "63.5"
+    assert forms.display(Decimal("0.2000")) == "0.2"
 
 
 def test_foundation_route_names_are_reserved():
@@ -91,7 +95,8 @@ def test_foundation_route_names_are_reserved():
 def test_index_shows_seeded_admin(client, seeded):
     response = client.get("/")
     assert response.status_code == 200
-    assert "admin@example.com" in response.text
+    assert "Admin (admin)" in response.text
+    assert "Current user:" not in response.text
     assert "Acting as" in response.text
 
 

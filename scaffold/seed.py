@@ -157,7 +157,13 @@ def _value(field: Field, index: int, rng: random.Random, session, references):
     if field.type == BOOL:
         return bool(rng.getrandbits(1))
     if field.type == ENUM:
-        return field.options[index % len(field.options)]
+        if index < len(field.options):
+            return field.options[index]
+        weights = [
+            3 if field.workflow and option_index == 0 else 1
+            for option_index in range(len(field.options))
+        ]
+        return rng.choices(field.options, weights=weights, k=1)[0]
     target = references.get(field.target)
     if target is None:
         return None

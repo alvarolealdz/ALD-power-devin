@@ -91,6 +91,7 @@ def test_create_writes_the_row_and_its_audit_entry(client, session, widget):
     assert (entry.action, entry.table_name, entry.row_id) == ("insert", "widget", str(row.id))
     assert entry.actor_label == "admin@example.com"
     assert entry.after["label"] == "Alpha"
+    assert "#1" in client.get("/widgets").text
 
 
 def test_update_and_delete_are_audited(client, session, widget):
@@ -121,6 +122,7 @@ def test_admin_sees_sensitive_values(client, widget):
 def test_detail_and_workflow_decision_are_role_aware(client, session, editor, viewer, widget):
     detail = client.get("/widgets/1")
     assert detail.status_code == 200
+    assert "Widget #1" in detail.text
     assert "Decision" in detail.text
     assert "Mark Review" in detail.text
 
@@ -175,7 +177,8 @@ def test_a_non_admin_does_not_see_sensitive_values_in_the_audit_trail(client, ed
 
 
 def test_an_admin_still_sees_the_audit_payload(client, widget):
-    assert "confidential" in client.get("/").text
+    client.post("/widgets/1", data={"label": "Alpha", "internal_note": "changed"})
+    assert "changed" in client.get("/").text
 
 
 def test_a_reference_to_a_row_that_does_not_exist_is_a_bad_request(client, session):
@@ -292,7 +295,7 @@ def test_required_sensitive_fields_make_creation_admin_only(
         ).all()
         == []
     )
-    assert "New kyc review" not in client.get("/kyc-queue").text
+    assert "New KYC review" not in client.get("/kyc-queue").text
 
     as_user(client, seeded)
     response = client.post(
@@ -320,7 +323,10 @@ def test_required_sensitive_fields_make_creation_admin_only(
             AuditLog.table_name == "kyc_review", AuditLog.action == AuditLog.ACTION_INSERT
         )
     ).one()
-    assert "New kyc review" in client.get("/kyc-queue").text
+    assert "KYC review #1" in client.get(f"/kyc-queue/{row.id}").text
+    assert "New KYC review" in client.get("/kyc-queue").text
+    listing = client.get("/kyc-queue").text
+    assert listing.index("Customer name") < listing.index("Risk score")
 
     as_user(client, editor)
     response = client.post(

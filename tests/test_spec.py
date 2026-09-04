@@ -54,6 +54,21 @@ def test_description_workflow_tones_and_samples_are_parsed():
     assert spec.fields[0].sample == ("One", "Two")
 
 
+def test_singular_title_is_parsed_and_overrides_the_default():
+    spec = parse({**MINIMAL, "singular": "A widget"})
+    assert spec.singular == "A widget"
+    assert spec.singular_title == "A widget"
+
+
+@pytest.mark.parametrize(
+    "singular",
+    ["x" * 61, "line\nbreak"],
+)
+def test_singular_title_is_validated(singular):
+    with pytest.raises(SpecError, match="singular"):
+        parse({**MINIMAL, "singular": singular})
+
+
 @pytest.mark.parametrize(
     ("field", "message"),
     [
