@@ -14,6 +14,7 @@ Migrations, which legitimately write outside the ORM, opt out explicitly with
 :func:`raw_writes_allowed`.
 """
 
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -26,6 +27,11 @@ from sqlalchemy.sql.dml import Delete, Insert, Update
 from sqlalchemy.sql.elements import TextClause
 
 _SESSION_DEPTH_KEY = "_audit_write_depth"
+_WRITING_KEYWORDS = frozenset(
+    {"insert", "update", "delete", "replace", "upsert", "merge", "truncate", "drop", "alter"}
+)
+_COMMENT = re.compile(r"/\*.*?\*/|--[^\n]*", re.DOTALL)
+_WORD = re.compile(r"[a-z_]+")
 _raw_writes: ContextVar[int] = ContextVar("audit_raw_writes", default=0)
 
 
@@ -101,8 +107,28 @@ def _reject_unaudited_cursor_statement(
 
 
 def _reject_dml_text(statement: str) -> None:
-    head = statement.lstrip().split(None, 1)[0].lower() if statement.strip() else ""
-    if head in {"insert", "update", "delete", "replace", "truncate", "drop", "alter"}:
-        raise AuditBypassError(
-            f"unaudited raw {head} statement; write through foundation.audit.write()"
-        )
+    """Reject raw SQL that writes.
+
+    Comments, leading CTEs and multi-statement strings all hide the writing
+    keyword from a naive look at the first word, so strip the comments, split on
+    statement boundaries and inspect every word of a ``WITH`` statement.
+    """
+    for words in _statement_words(statement):
+        if not words:
+            continue
+        head = words[0]
+        if head in _WRITING_KEYWORDS:
+            raise _bypass(head)
+        if head == "with" and (nested := _WRITING_KEYWORDS.intersection(words)):
+            raise _bypass(min(nested))
+
+
+def _statement_words(statement: str) -> Iterator[list[str]]:
+    for part in _COMMENT.sub(" ", statement).split(";"):
+        yield _WORD.findall(part.lower())
+
+
+def _bypass(keyword: str) -> AuditBypassError:
+    return AuditBypassError(
+        f"unaudited raw {keyword} statement; write through foundation.audit.write()"
+    )

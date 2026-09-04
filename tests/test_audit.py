@@ -111,6 +111,36 @@ def test_raw_sql_dml_is_refused(session, seeded):
     session.rollback()
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "/* c */ INSERT INTO role (name) VALUES ('sneaky')",
+        "\n-- note\nUPDATE role SET name = 'sneaky'",
+        "WITH c(n) AS (SELECT 'sneaky') INSERT INTO role (name) SELECT n FROM c",
+        "SELECT 1; DELETE FROM role",
+        "   \n\t delete from role",
+    ],
+)
+def test_disguised_raw_dml_is_refused(engine, session, seeded, statement):
+    with pytest.raises(AuditBypassError):
+        session.execute(text(statement))
+    session.rollback()
+    with engine.connect() as connection, pytest.raises(AuditBypassError):
+        connection.exec_driver_sql(statement)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "/* just looking */ SELECT count(*) FROM role",
+        "WITH c(n) AS (SELECT name FROM role) SELECT count(*) FROM c",
+        "SELECT name FROM role -- delete this one day",
+    ],
+)
+def test_disguised_reads_are_allowed(session, seeded, statement):
+    session.execute(text(statement))
+
+
 def test_driver_level_sql_is_refused(engine, session, seeded):
     with engine.connect() as connection, pytest.raises(AuditBypassError):
         connection.exec_driver_sql("UPDATE role SET name = 'sneaky'")

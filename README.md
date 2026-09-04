@@ -63,6 +63,10 @@ Reads are untouched.
   role that cannot write directly). Worth doing when this moves off SQLite.
 - `raw_writes_allowed()` is a real escape hatch. It is exported so migrations
   can use it; grep for it in review.
+- Raw-SQL rejection is keyword matching over comment-stripped statements, not a
+  parser. It handles comments, leading CTEs and multi-statement strings, but a
+  sufficiently exotic dialect could still slip through. ORM and Core writes,
+  which is how application code actually writes, are matched structurally.
 
 ## Templates
 
