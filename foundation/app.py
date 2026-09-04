@@ -73,12 +73,12 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
     for entry in entries:
         href = None
         target_label = entry.table_name.replace("_", " ").capitalize()
-        if entry.action != AuditLog.ACTION_DELETE:
-            for item in mounted:
-                model = item.model
-                if model is None or model.__tablename__ != entry.table_name:
-                    continue
-                target_label = item.singular
+        for item in mounted:
+            model = item.model
+            if model is None or model.__tablename__ != entry.table_name:
+                continue
+            target_label = item.singular
+            if entry.action != AuditLog.ACTION_DELETE:
                 try:
                     href = str(
                         request.url_for(
@@ -88,7 +88,7 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
                     )
                 except NoMatchFound:
                     pass
-                break
+            break
         feed.append(
             {
                 "actor": entry.actor_label,
