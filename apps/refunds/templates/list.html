@@ -11,6 +11,16 @@ Creating a row is admin-only: customer_ref are required but hidden from other ro
     </div>
     {% if new_url %}<a class="btn btn-primary" href="{{ new_url }}">New refund</a>{% endif %}
   </div>
+  {% if searchable %}
+    <form method="get" action="{{ list_url }}" class="search">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search refunds dashboard…">
+      {% if state is not none %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+      <button class="btn btn-ghost" type="submit">Search</button>
+      {% if q %}<a class="btn btn-ghost" href="{{ list_url }}">Clear</a>{% endif %}
+    </form>
+  {% endif %}
   {% if stats %}<div class="stats">{% for stat in stats %}<div class="stat"><span class="stat-value">{{ stat.value }}</span><span class="stat-label">{{ stat.label }}</span></div>{% endfor %}</div>{% endif %}
   {% if tabs %}<nav class="tabs">{% for tab in tabs %}<a class="tab{% if tab.active %} active{% endif %}" href="{{ tab.href }}">{{ tab.label }} <span class="tab-count">{{ tab.count }}</span></a>{% endfor %}</nav>{% endif %}
   {% include "partials/table.html" %}

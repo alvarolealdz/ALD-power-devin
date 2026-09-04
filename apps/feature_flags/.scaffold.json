@@ -3,10 +3,10 @@
   "files": {
     "apps/feature_flags/__init__.py": "9cea6e29b1bdd968bff582bce0442b47e2bc097aa28573d56e207308b7fa0eee",
     "apps/feature_flags/model.py": "f648352dcd316cc3d84e60961d70f608d62ab24b1fcb17bfe2e3356dad9e564b",
-    "apps/feature_flags/routes.py": "a1d209cd23669b205b91e6568398da6fa69506a7e59ec4ada289604af6204579",
-    "apps/feature_flags/templates/detail.html": "7b15923ae67b6fa6ff66530c71b1e80511b72c89c47364a2f965b7671f32b98a",
-    "apps/feature_flags/templates/form.html": "55832fc8f3b4ac359a85b93c6fd565f618c4e1d8ebea22e2dff758bc162205ea",
-    "apps/feature_flags/templates/list.html": "bdec1016228c26d1021344bd7ea8c8f7c36f4b06e55c0d5e9afc5430e7a3cb84",
+    "apps/feature_flags/routes.py": "0f45447c702ea3376b605b4eee535d0aaa56a1cb1ced3ae132004903a3b42d07",
+    "apps/feature_flags/templates/detail.html": "955e0eba4e62767e6bf0513ac0cc00c1a267ff860fee8ac835efb249494fad39",
+    "apps/feature_flags/templates/form.html": "98c79de249bf2192d6e38beb996808055fb56937956bd17d0b0106c3f146d66a",
+    "apps/feature_flags/templates/list.html": "106cd3fe45f2de0dbee1838bbf3d2481f932b7190070e6dd6fabfd5f38f6e4f7",
     "migrations/versions/30ebf50c3a7e_create_feature_flags.py": "82cc2cf09588dd4dec737f2985f33b5f9de30058662de46c292bdc93a08af86b"
   },
   "spec": "specs/feature_flags.yaml"

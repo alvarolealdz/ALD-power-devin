@@ -3,10 +3,10 @@
   "files": {
     "apps/vendor_contracts/__init__.py": "df1afbd1041e09e0f67f94830fb70479c3a9332543314a569a532dc3932b2993",
     "apps/vendor_contracts/model.py": "d2974075c5632746ebe60ecd65d85b794c1b4973e325c4e28701c8f8154898b6",
-    "apps/vendor_contracts/routes.py": "7b777348350ef4319eec30e8713155c228ed74c7e5058c310604a8e1b87898d2",
-    "apps/vendor_contracts/templates/detail.html": "295441d0adbbc5d679183fe6c3530218dc6a8e3730b4220cb1cf0cc61472ef9a",
-    "apps/vendor_contracts/templates/form.html": "89e8de3d7ee042351e9f2516431ce6310beeb8d7273441e77a0ea33b897c2f06",
-    "apps/vendor_contracts/templates/list.html": "70a3acc0bdeda137573d52adcc62e3dcd9ab52c580e49de97f2cc2ee9bd798e6",
+    "apps/vendor_contracts/routes.py": "aade9e7b70eb29e98287471212b13842bd1955ee639bd0cec53beb641fe0808e",
+    "apps/vendor_contracts/templates/detail.html": "06508e8a42ba51448619258a028580bccd6ca462ebada0f9fd52edfb0af2420e",
+    "apps/vendor_contracts/templates/form.html": "6ede686b6b79087e90a18b2d164f656519a66d18a486fee5a0d24a50407e15e0",
+    "apps/vendor_contracts/templates/list.html": "b92ffee9bb5c25deed3fb955242d58abd08905c93145ae1fa86570115e93ee72",
     "migrations/versions/65a511914828_create_vendor_contracts.py": "583da804810407a601e0f9661b92e00dc1e4e73d26b5835b177efe42f551b499"
   },
   "spec": "specs/vendor_contracts.yaml"
