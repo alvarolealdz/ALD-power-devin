@@ -1,15 +1,26 @@
 [[ header ]]
 
 from typing import Annotated
+[% if spec.workflow_field %]
+from datetime import UTC, datetime
+from urllib.parse import urlencode
+[% endif %]
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
+[% if spec.workflow_field %]
+from sqlalchemy import func, select
+[% else %]
 from sqlalchemy import select
+[% endif %]
 from sqlalchemy.orm import Session
 
 from apps.[[ spec.app ]].model import [[ model_imports ]]
 from foundation import audit, auth, forms
 from foundation.deps import CurrentUser, DbSession
+[% if spec.workflow_field %]
+from foundation.models import AuditLog
+[% endif %]
 from foundation.templating import templates
 [% for line in extra_route_imports %]
 [[ line ]]
@@ -19,6 +30,19 @@ TITLE = "[[ spec.title ]]"
 DESCRIPTION = "[[ spec.description|replace('\\', '\\\\')|replace('"', '\\"') ]]"
 SINGULAR = "[[ spec.singular_title|replace('\\', '\\\\')|replace('"', '\\"') ]]"
 MODEL = [[ spec.class_name ]]
+[% if spec.workflow_field %]
+WORKFLOW_FIELD = "[[ spec.workflow_field.name ]]"
+OPEN_STATES = (
+[% for option in spec.workflow_field.open %]
+    "[[ option ]]",
+[% endfor %]
+)
+[[ spec.workflow_field.name|upper ]]_CLOSED = (
+[% for option in spec.workflow_field.closed %]
+    "[[ option ]]",
+[% endfor %]
+)
+[% endif %]
 
 router = APIRouter(prefix="[[ spec.mount_path ]]", tags=["[[ spec.app ]]"])
 
@@ -177,9 +201,73 @@ def _form_page(
 
 
 @router.get("", name="[[ spec.app ]]_list")
-def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
+def list_rows(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+[% if spec.workflow_field %]
+    state: str = "",
+[% endif %]
+):
     admin = auth.is_admin(current_user)
+[% if spec.workflow_field %]
+    workflow_column = getattr(MODEL, WORKFLOW_FIELD)
+    grouped = dict(
+        session.execute(select(workflow_column, func.count()).group_by(workflow_column)).all()
+    )
+    open_count = sum(grouped.get(option, 0) for option in OPEN_STATES)
+    total = sum(grouped.values())
+    if state == "":
+        rows = session.scalars(
+            select(MODEL).where(workflow_column.in_(OPEN_STATES)).order_by(MODEL.id.asc())
+        ).all()
+    elif state == "all":
+        rows = session.scalars(select(MODEL).order_by(MODEL.id.desc())).all()
+    elif state in [[ spec.workflow_field.name|upper ]]_OPTIONS:
+        rows = session.scalars(
+            select(MODEL).where(workflow_column == state).order_by(MODEL.id.desc())
+        ).all()
+    else:
+        raise HTTPException(status_code=400, detail="invalid state")
+    list_url = str(request.url_for("[[ spec.app ]]_list"))
+    tabs = [
+        {"label": "Needs decision", "href": list_url, "count": open_count, "active": state == ""}
+    ]
+    tabs.extend(
+        {
+            "label": option.title(),
+            "href": f"{list_url}?{urlencode({'state': option})}",
+            "count": grouped.get(option, 0),
+            "active": state == option,
+        }
+        for option in [[ spec.workflow_field.name|upper ]]_OPTIONS
+    )
+    tabs.append(
+        {
+            "label": "All",
+            "href": f"{list_url}?state=all",
+            "count": total,
+            "active": state == "all",
+        }
+    )
+    today_start = datetime.now(UTC).replace(
+        hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+    )
+    decided_today = sum(
+        1
+        for entry in session.scalars(
+            select(AuditLog).where(
+                AuditLog.table_name == MODEL.__tablename__,
+                AuditLog.action == AuditLog.ACTION_UPDATE,
+                AuditLog.created_at >= today_start,
+            )
+        )
+        if (entry.after or {}).get(WORKFLOW_FIELD) in [[ spec.workflow_field.name|upper ]]_CLOSED
+        and (entry.after or {}).get(WORKFLOW_FIELD) != (entry.before or {}).get(WORKFLOW_FIELD)
+    )
+[% else %]
     rows = session.scalars(select([[ spec.class_name ]]).order_by([[ spec.class_name ]].id.desc())).all()
+[% endif %]
     new_url = (
         str(request.url_for("[[ spec.app ]]_new"))
 [% if spec.create_is_admin_only %]
@@ -198,6 +286,23 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "rows": [_row(request, row, admin) for row in rows],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
+[% if spec.workflow_field %]
+            "empty": {
+                "title": (
+                    "Nothing needs a decision"
+                    if state == ""
+                    else "No [[ spec.title|lower ]] yet"
+                ),
+                "text": (
+                    f"New {SINGULAR} will appear here when they arrive."
+                    if state == ""
+                    else DESCRIPTION or None
+                ),
+                "cta": {"label": "New [[ spec.singular_title ]]", "href": new_url}
+                if new_url
+                else None,
+            },
+[% else %]
             "empty": {
                 "title": "No [[ spec.title|lower ]] yet",
                 "text": DESCRIPTION or None,
@@ -205,7 +310,16 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
                 if new_url
                 else None,
             },
+[% endif %]
             "new_url": new_url,
+[% if spec.workflow_field %]
+            "stats": [
+                {"label": "Waiting", "value": open_count},
+                {"label": "Decided today", "value": decided_today},
+                {"label": "Total", "value": total},
+            ],
+            "tabs": tabs,
+[% endif %]
         },
     )
 
@@ -325,7 +439,7 @@ def decide_row(
         raise HTTPException(status_code=400, detail="invalid status")
     audit.update(session, row, {"[[ spec.workflow_field.name ]]": [[ spec.workflow_field.name ]]})
     return RedirectResponse(
-        request.url_for("[[ spec.app ]]_detail", [[ spec.entity ]]_id=row.id), status_code=303
+        request.url_for("[[ spec.app ]]_list"), status_code=303
     )
 
 

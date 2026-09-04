@@ -5,7 +5,7 @@ Edit freely: regenerating keeps any file you have changed. #}
 {% block content %}
   <div class="page-head">
     <div>
-      <p class="crumbs"><a href="{{ list_url }}">Widgets</a> / #{{ row_id }}</p>
+      <p class="crumbs"><a href="{{ list_url }}">Widgets</a> / #{{ row_id }} <a class="btn btn-ghost btn-sm" href="{{ list_url }}">Back to queue</a></p>
       <h1>Widget #{{ row_id }}</h1>
     </div>
     {% if edit_url or delete_url %}

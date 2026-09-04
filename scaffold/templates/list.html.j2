@@ -9,5 +9,7 @@
     </div>
     {% if new_url %}<a class="btn btn-primary" href="{{ new_url }}">New [[ spec.singular_title ]]</a>{% endif %}
   </div>
+  {% if stats %}<div class="stats">{% for stat in stats %}<div class="stat"><span class="stat-value">{{ stat.value }}</span><span class="stat-label">{{ stat.label }}</span></div>{% endfor %}</div>{% endif %}
+  {% if tabs %}<nav class="tabs">{% for tab in tabs %}<a class="tab{% if tab.active %} active{% endif %}" href="{{ tab.href }}">{{ tab.label }} <span class="tab-count">{{ tab.count }}</span></a>{% endfor %}</nav>{% endif %}
   {% include "partials/table.html" %}
 {% endblock %}

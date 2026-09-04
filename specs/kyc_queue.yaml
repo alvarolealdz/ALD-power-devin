@@ -25,6 +25,7 @@ fields:
     required: true
     options: [pending, approved, rejected, escalated]
     workflow: true
+    open: [pending, escalated]
     tones: {pending: warning, approved: success, rejected: danger, escalated: info}
 
   - name: submitted_on

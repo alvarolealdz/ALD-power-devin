@@ -143,6 +143,50 @@ def test_detail_and_workflow_decision_are_role_aware(client, session, editor, vi
     assert invalid.status_code == 400
 
 
+def test_workflow_list_is_a_queue_with_tabs_and_stats(client, session, editor, viewer, widget):
+    client.post("/widgets", data={"label": "Beta", "status": "draft"})
+    client.post("/widgets", data={"label": "Gamma", "status": "done"})
+
+    default = client.get("/widgets")
+    assert default.status_code == 200
+    assert "#1" in default.text and "#2" in default.text
+    assert "#3" not in default.text
+    assert default.text.index("#1") < default.text.index("#2")
+    assert "Needs decision" in default.text
+    assert 'tab-count">2</span>' in default.text
+    assert re.search(r"Draft\s*<span class=\"tab-count\">2</span>", default.text)
+    assert re.search(r"Review\s*<span class=\"tab-count\">0</span>", default.text)
+    assert re.search(r"Done\s*<span class=\"tab-count\">1</span>", default.text)
+    assert re.search(r"All\s*<span class=\"tab-count\">3</span>", default.text)
+    assert "Waiting" in default.text
+    assert "2" in default.text
+    assert "Decided today" in default.text
+
+    done = client.get("/widgets?state=done")
+    assert "Gamma" in done.text
+    assert "Beta" not in done.text
+    assert "Alpha" not in done.text
+    assert client.get("/widgets?state=all").text.count("cell-primary") == 3
+    assert client.get("/widgets?state=bogus").status_code == 400
+
+    as_user(client, editor)
+    decision = client.post("/widgets/1/status", data={"status": "done"}, follow_redirects=False)
+    assert decision.status_code == 303
+    assert decision.headers["location"].endswith("/widgets")
+    queue = client.get("/widgets")
+    assert "Alpha" not in queue.text
+    assert "Beta" in queue.text
+    assert "Decided today" in queue.text
+    assert "3" in queue.text
+
+    client.post("/widgets/2/status", data={"status": "review"})
+    assert "Decided today" in client.get("/widgets").text
+    assert "3" in client.get("/widgets").text
+
+    as_user(client, viewer)
+    assert client.post("/widgets/2/status", data={"status": "done"}).status_code == 403
+
+
 def test_activity_feed_renders_workflow_changes_for_non_admins(client, editor, widget):
     as_user(client, editor)
     client.post("/widgets/1/status", data={"status": "done"})
@@ -295,7 +339,7 @@ def test_required_sensitive_fields_make_creation_admin_only(
         ).all()
         == []
     )
-    assert "New KYC review" not in client.get("/kyc-queue").text
+    assert 'href="/kyc-queue/new"' not in client.get("/kyc-queue").text
 
     as_user(client, seeded)
     response = client.post(

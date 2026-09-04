@@ -9,7 +9,7 @@
       <a class="app-card" href="{{ item.path }}">
         <h2>{{ item.title }}</h2>
         <p class="muted">{{ item.description }}</p>
-        <p class="app-count">{{ item.count }} records</p>
+        {% if item.open is not none %}<p class="app-count"><span class="stat-value">{{ item.open }}</span> waiting · {{ item.count }} total</p>{% else %}<p class="app-count">{{ item.count }} records</p>{% endif %}
       </a>
     {% endfor %}
   </section>

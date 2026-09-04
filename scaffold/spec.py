@@ -71,6 +71,7 @@ _FIELD_KEYS = frozenset(
         "options",
         "target",
         "workflow",
+        "open",
         "tones",
         "sample",
     }
@@ -92,6 +93,7 @@ class Field:
     options: tuple[str, ...] = ()
     target: str | None = None
     workflow: bool = False
+    open: tuple[str, ...] = ()
     tones: tuple[tuple[str, str], ...] = ()
     sample: str | tuple[str, ...] | None = None
 
@@ -106,6 +108,10 @@ class Field:
 
     def tone(self, option: str) -> str:
         return dict(self.tones).get(option, "neutral")
+
+    @property
+    def closed(self) -> tuple[str, ...]:
+        return tuple(option for option in self.options if option not in self.open)
 
 
 @dataclass(frozen=True)
@@ -220,6 +226,7 @@ def _parse_field(raw: Any, index: int) -> Field:
     workflow = _flag(raw, "workflow", where)
     if workflow and field_type != ENUM:
         raise SpecError(f"{where}: workflow only applies to enum fields")
+    open_states = _parse_open(raw, where, workflow, options)
     tones = _parse_tones(raw, where, field_type, options)
     sample = _parse_sample(raw, where, field_type)
     required = _flag(raw, "required", where)
@@ -244,6 +251,7 @@ def _parse_field(raw: Any, index: int) -> Field:
         options=options,
         target=target,
         workflow=workflow,
+        open=open_states,
         tones=tones,
         sample=sample,
     )
@@ -309,6 +317,29 @@ def _parse_tones(
             raise SpecError(f"{where}: tone must be one of {', '.join(sorted(_TONES))}")
         parsed.append((option, tone))
     return tuple(parsed)
+
+
+def _parse_open(
+    raw: dict[str, Any],
+    where: str,
+    workflow: bool,
+    options: tuple[str, ...],
+) -> tuple[str, ...]:
+    open_states = raw.get("open")
+    if open_states is None:
+        return (options[0],) if workflow else ()
+    if not workflow:
+        raise SpecError(f"{where}: open only applies to workflow fields")
+    if not isinstance(open_states, list) or not open_states:
+        raise SpecError(f"{where}: open must be a non-empty list")
+    values = tuple(str(option) for option in open_states)
+    if len(set(values)) != len(values):
+        raise SpecError(f"{where}: open states cannot contain duplicates")
+    if any(option not in options for option in values):
+        raise SpecError(f"{where}: open state must be one of the enum options")
+    if len(values) == len(options):
+        raise SpecError(f"{where}: open states must leave at least one closed option")
+    return values
 
 
 def _parse_sample(raw: dict[str, Any], where: str, field_type: str) -> str | tuple[str, ...] | None:

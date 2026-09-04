@@ -5,23 +5,34 @@ Edit freely: regenerating keeps any file you have changed.
 Creating a row is admin-only: customer_name, customer_ref are required but hidden from other roles.
 """
 
+from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from apps.kyc_queue.model import STATUS_OPTIONS, STATUS_TONES, KycReview
 from foundation import audit, auth, forms
 from foundation.deps import CurrentUser, DbSession
-from foundation.models import User
+from foundation.models import AuditLog, User
 from foundation.templating import templates
 
 TITLE = "KYC review queue"
 DESCRIPTION = "Customer due-diligence cases waiting for a reviewer's decision."
 SINGULAR = "KYC review"
 MODEL = KycReview
+WORKFLOW_FIELD = "status"
+OPEN_STATES = (
+    "pending",
+    "escalated",
+)
+STATUS_CLOSED = (
+    "approved",
+    "rejected",
+)
 
 router = APIRouter(prefix="/kyc-queue", tags=["kyc_queue"])
 
@@ -298,9 +309,65 @@ def _form_page(
 
 
 @router.get("", name="kyc_queue_list")
-def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
+def list_rows(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    state: str = "",
+):
     admin = auth.is_admin(current_user)
-    rows = session.scalars(select(KycReview).order_by(KycReview.id.desc())).all()
+    workflow_column = getattr(MODEL, WORKFLOW_FIELD)
+    grouped = dict(
+        session.execute(select(workflow_column, func.count()).group_by(workflow_column)).all()
+    )
+    open_count = sum(grouped.get(option, 0) for option in OPEN_STATES)
+    total = sum(grouped.values())
+    if state == "":
+        rows = session.scalars(
+            select(MODEL).where(workflow_column.in_(OPEN_STATES)).order_by(MODEL.id.asc())
+        ).all()
+    elif state == "all":
+        rows = session.scalars(select(MODEL).order_by(MODEL.id.desc())).all()
+    elif state in STATUS_OPTIONS:
+        rows = session.scalars(
+            select(MODEL).where(workflow_column == state).order_by(MODEL.id.desc())
+        ).all()
+    else:
+        raise HTTPException(status_code=400, detail="invalid state")
+    list_url = str(request.url_for("kyc_queue_list"))
+    tabs = [
+        {"label": "Needs decision", "href": list_url, "count": open_count, "active": state == ""}
+    ]
+    tabs.extend(
+        {
+            "label": option.title(),
+            "href": f"{list_url}?{urlencode({'state': option})}",
+            "count": grouped.get(option, 0),
+            "active": state == option,
+        }
+        for option in STATUS_OPTIONS
+    )
+    tabs.append(
+        {
+            "label": "All",
+            "href": f"{list_url}?state=all",
+            "count": total,
+            "active": state == "all",
+        }
+    )
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    decided_today = sum(
+        1
+        for entry in session.scalars(
+            select(AuditLog).where(
+                AuditLog.table_name == MODEL.__tablename__,
+                AuditLog.action == AuditLog.ACTION_UPDATE,
+                AuditLog.created_at >= today_start,
+            )
+        )
+        if (entry.after or {}).get(WORKFLOW_FIELD) in STATUS_CLOSED
+        and (entry.after or {}).get(WORKFLOW_FIELD) != (entry.before or {}).get(WORKFLOW_FIELD)
+    )
     new_url = str(request.url_for("kyc_queue_new")) if auth.is_admin(current_user) else None
     return templates.TemplateResponse(
         request,
@@ -312,11 +379,21 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
             "empty": {
-                "title": "No kyc review queue yet",
-                "text": DESCRIPTION or None,
+                "title": ("Nothing needs a decision" if state == "" else "No kyc review queue yet"),
+                "text": (
+                    f"New {SINGULAR} will appear here when they arrive."
+                    if state == ""
+                    else DESCRIPTION or None
+                ),
                 "cta": {"label": "New KYC review", "href": new_url} if new_url else None,
             },
             "new_url": new_url,
+            "stats": [
+                {"label": "Waiting", "value": open_count},
+                {"label": "Decided today", "value": decided_today},
+                {"label": "Total", "value": total},
+            ],
+            "tabs": tabs,
         },
     )
 
@@ -435,9 +512,7 @@ def decide_row(
     if status not in STATUS_OPTIONS:
         raise HTTPException(status_code=400, detail="invalid status")
     audit.update(session, row, {"status": status})
-    return RedirectResponse(
-        request.url_for("kyc_queue_detail", kyc_review_id=row.id), status_code=303
-    )
+    return RedirectResponse(request.url_for("kyc_queue_list"), status_code=303)
 
 
 @router.get("/{kyc_review_id}/edit", name="kyc_queue_edit")

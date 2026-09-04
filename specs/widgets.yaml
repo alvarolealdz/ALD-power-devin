@@ -23,6 +23,7 @@ fields:
     type: enum
     options: [draft, review, done]
     workflow: true
+    open: [draft, review]
     tones: {draft: neutral, review: warning, done: success}
 
   - name: owner

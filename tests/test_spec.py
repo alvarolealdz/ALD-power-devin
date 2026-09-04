@@ -42,6 +42,7 @@ def test_description_workflow_tones_and_samples_are_parsed():
                     "type": "enum",
                     "options": ["draft", "done"],
                     "workflow": True,
+                    "open": ["draft"],
                     "tones": {"done": "success"},
                 },
             ],
@@ -49,6 +50,8 @@ def test_description_workflow_tones_and_samples_are_parsed():
     )
     assert spec.description == "A useful description."
     assert spec.workflow_field is spec.fields[1]
+    assert spec.fields[1].open == ("draft",)
+    assert spec.fields[1].closed == ("done",)
     assert spec.fields[1].tone("done") == "success"
     assert spec.fields[1].tone("draft") == "neutral"
     assert spec.fields[0].sample == ("One", "Two")
@@ -93,6 +96,50 @@ def test_two_workflow_fields_are_rejected():
                 "fields": [
                     {"name": "first", "type": "enum", "options": ["a"], "workflow": True},
                     {"name": "second", "type": "enum", "options": ["b"], "workflow": True},
+                ],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("open_states", "message"),
+    [
+        ([], "non-empty"),
+        (["draft", "draft"], "duplicates"),
+        (["unknown"], "one of"),
+        (["draft", "done"], "closed"),
+    ],
+)
+def test_workflow_open_states_are_validated(open_states, message):
+    with pytest.raises(SpecError, match=message):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "options": ["draft", "done"],
+                        "workflow": True,
+                        "open": open_states,
+                    }
+                ],
+            }
+        )
+
+
+def test_open_states_are_rejected_without_workflow():
+    with pytest.raises(SpecError, match="only applies"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "options": ["draft", "done"],
+                        "open": ["draft"],
+                    }
                 ],
             }
         )

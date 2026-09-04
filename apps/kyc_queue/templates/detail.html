@@ -6,7 +6,7 @@ Creating a row is admin-only: customer_name, customer_ref are required but hidde
 {% block content %}
   <div class="page-head">
     <div>
-      <p class="crumbs"><a href="{{ list_url }}">KYC review queue</a> / #{{ row_id }}</p>
+      <p class="crumbs"><a href="{{ list_url }}">KYC review queue</a> / #{{ row_id }} <a class="btn btn-ghost btn-sm" href="{{ list_url }}">Back to queue</a></p>
       <h1>KYC review #{{ row_id }}</h1>
     </div>
     {% if edit_url or delete_url %}

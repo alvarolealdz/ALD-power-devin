@@ -54,11 +54,18 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
     for item in mounted:
         model = item.model
         count = session.scalar(select(func.count()).select_from(model)) if model else 0
+        open_count = None
+        if model and item.workflow:
+            workflow_field, open_states = item.workflow
+            open_count = session.scalar(
+                select(func.count()).where(getattr(model, workflow_field).in_(open_states))
+            )
         apps.append(
             {
                 "title": item.title,
                 "description": item.description,
                 "count": count or 0,
+                "open": open_count,
                 "path": item.router.prefix or f"/{item.name}",
             }
         )

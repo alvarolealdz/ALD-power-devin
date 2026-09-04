@@ -52,6 +52,15 @@ class DiscoveredApp:
         return getattr(self.module("routes"), "SINGULAR", self.name.replace("_", " ").capitalize())
 
     @property
+    def workflow(self) -> tuple[str, tuple[str, ...]] | None:
+        module = self.module("routes")
+        field = getattr(module, "WORKFLOW_FIELD", None)
+        open_states = getattr(module, "OPEN_STATES", None)
+        if not field or not open_states:
+            return None
+        return field, tuple(open_states)
+
+    @property
     def model(self):
         return getattr(self.module("routes"), "MODEL", None)
 
