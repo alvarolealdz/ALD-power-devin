@@ -11,7 +11,7 @@ Edit freely: regenerating keeps any file you have changed. #}
     {% if edit_url or delete_url %}
       <div class="actions">
         {% if edit_url %}<a class="btn btn-ghost" href="{{ edit_url }}">Edit</a>{% endif %}
-        {% if delete_url %}<form action="{{ delete_url }}" method="post"><button class="btn btn-danger btn-sm" type="submit">Delete</button></form>{% endif %}
+        {% if delete_url %}<form action="{{ delete_url }}" method="post" data-confirm="Delete vendor contract #{{ row_id }}? This is recorded in the audit trail and cannot be undone."><button class="btn btn-danger btn-sm" type="submit">Delete</button></form>{% endif %}
       </div>
     {% endif %}
   </div>
@@ -25,6 +25,7 @@ Edit freely: regenerating keeps any file you have changed. #}
         <h2>Decision</h2>
         <p>Current: {% set badge = current %}{% include "partials/badge.html" %}</p>
         <form action="{{ decision_url }}" method="post" class="decision-actions">
+          <input type="hidden" name="expected" value="{{ current.label }}">
           {% for decision in decisions %}
             <button class="btn tone-{{ decision.tone }}" name="status" value="{{ decision.value }}">Mark {{ decision.label }}</button>
           {% endfor %}
