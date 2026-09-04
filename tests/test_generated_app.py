@@ -12,7 +12,7 @@ from apps.widgets.model import Widget
 from foundation import audit, auth, discovery
 from foundation.app import app
 from foundation.config import CURRENT_USER_COOKIE
-from foundation.models import ROLE_EDITOR, AuditLog, Role, User
+from foundation.models import ROLE_EDITOR, ROLE_VIEWER, AuditLog, Role, User
 
 
 @pytest.fixture()
@@ -41,6 +41,14 @@ def editor(session, seeded):
 
 
 @pytest.fixture()
+def viewer(session, seeded):
+    role = session.scalars(select(Role).where(Role.name == ROLE_VIEWER)).one()
+    user = User(email="viewer@example.com", display_name="Viewer", role_id=role.id)
+    audit.insert(session, user, actor=seeded)
+    return user
+
+
+@pytest.fixture()
 def widget(client):
     """One row, created through the app so the audit trail is real."""
     response = client.post(
@@ -56,8 +64,8 @@ def widget(client):
     return response
 
 
-def as_editor(client, editor):
-    client.cookies.set(CURRENT_USER_COOKIE, str(editor.id))
+def as_user(client, user):
+    client.cookies.set(CURRENT_USER_COOKIE, str(user.id))
 
 
 def audit_rows(session):
@@ -108,7 +116,7 @@ def test_admin_sees_sensitive_values(client, widget):
 
 
 def test_a_non_admin_never_sees_a_sensitive_field(client, editor, widget):
-    as_editor(client, editor)
+    as_user(client, editor)
 
     listing = client.get("/widgets")
     form = client.get("/widgets/1")
@@ -121,7 +129,7 @@ def test_a_non_admin_never_sees_a_sensitive_field(client, editor, widget):
 
 def test_a_non_admin_does_not_see_sensitive_values_in_the_audit_trail(client, editor, widget):
     """The audit payload carries the row, so it obeys the same rule the row does."""
-    as_editor(client, editor)
+    as_user(client, editor)
 
     home = client.get("/")
 
@@ -164,9 +172,55 @@ def test_the_user_switcher_is_populated_on_a_generated_page(client, editor):
     assert page.text.count("<option") >= 2
 
 
+def test_a_viewer_can_read(client, viewer, widget):
+    as_user(client, viewer)
+
+    assert client.get("/widgets").status_code == 200
+    assert client.get("/widgets/1").status_code == 200
+
+
+def test_a_viewer_is_offered_no_way_to_write(client, viewer, widget):
+    as_user(client, viewer)
+
+    assert "New widget" not in client.get("/widgets").text
+    form = client.get("/widgets/1").text
+    assert ">Save<" not in form
+    assert ">Delete<" not in form
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/widgets/new"),
+        ("post", "/widgets"),
+        ("post", "/widgets/1"),
+        ("post", "/widgets/1/delete"),
+    ],
+)
+def test_a_viewer_is_refused_every_write(client, session, viewer, widget, method, path):
+    """Hidden buttons are decoration; the request itself has to be refused."""
+    as_user(client, viewer)
+    before = len(audit_rows(session))
+
+    call = getattr(client, method)
+    response = call(path) if method == "get" else call(path, data={"label": "Beta"})
+
+    assert response.status_code == 403
+    assert session.scalars(select(Widget)).one().label == "Alpha"
+    assert len(audit_rows(session)) == before
+
+
+def test_an_editor_may_still_write(client, session, editor, widget):
+    as_user(client, editor)
+
+    assert client.get("/widgets/new").status_code == 200
+    assert client.post("/widgets/1", data={"label": "Beta"}).status_code == 200
+    assert session.scalars(select(Widget)).one().label == "Beta"
+
+
 def test_a_non_admin_cannot_submit_a_sensitive_field(client, session, editor, widget):
     """Hiding it in the template is cosmetic; the route has to ignore it too."""
-    as_editor(client, editor)
+    as_user(client, editor)
 
     client.post("/widgets/1", data={"label": "Beta", "internal_note": "smuggled"})
 

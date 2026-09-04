@@ -34,5 +34,8 @@
       {% if errors and errors[field.name] %}<p class="error">{{ errors[field.name] }}</p>{% endif %}
     </div>
   {% endfor %}
-  <button type="submit">{{ submit_label|default("Save") }}</button>
+  {# A page with no submit label is a read-only view of the same fields. #}
+  {% if submit_label is not none %}
+    <button type="submit">{{ submit_label|default("Save", true) }}</button>
+  {% endif %}
 </form>

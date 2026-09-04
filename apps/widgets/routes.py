@@ -166,6 +166,7 @@ def _form_page(
     *,
     action: str,
     heading: str,
+    writable: bool = True,
     delete_url: str | None = None,
     status_code: int = 200,
 ):
@@ -178,9 +179,9 @@ def _form_page(
             "action": action,
             "fields": _fields(session, values, admin),
             "errors": errors,
-            "submit_label": "Save",
+            "submit_label": "Save" if writable else None,
             "list_url": str(request.url_for("widgets_list")),
-            "delete_url": delete_url,
+            "delete_url": delete_url if writable else None,
         },
         status_code=status_code,
     )
@@ -199,13 +200,16 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "rows": [_row(request, row, admin) for row in rows],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "empty": "No widgets yet.",
-            "new_url": str(request.url_for("widgets_new")),
+            "new_url": (
+                str(request.url_for("widgets_new")) if auth.can_write(current_user) else None
+            ),
         },
     )
 
 
 @router.get("/new", name="widgets_new")
 def new_row(request: Request, session: DbSession, current_user: CurrentUser):
+    auth.require_write(current_user)
     admin = auth.is_admin(current_user)
     return _form_page(
         request,
@@ -231,6 +235,7 @@ def create_row(
     owner_id: Annotated[str, Form()] = "",
     internal_note: Annotated[str, Form()] = "",
 ):
+    auth.require_write(current_user)
     admin = auth.is_admin(current_user)
     values, errors = _parse(
         {
@@ -282,6 +287,7 @@ def edit_row(request: Request, session: DbSession, current_user: CurrentUser, wi
         admin,
         action=str(request.url_for("widgets_update", widget_id=row.id)),
         heading=f"Widget {row.id}",
+        writable=auth.can_write(current_user),
         delete_url=str(request.url_for("widgets_delete", widget_id=row.id)),
     )
 
@@ -300,6 +306,7 @@ def update_row(
     owner_id: Annotated[str, Form()] = "",
     internal_note: Annotated[str, Form()] = "",
 ):
+    auth.require_write(current_user)
     admin = auth.is_admin(current_user)
     row = _get(session, widget_id)
     values, errors = _parse(
@@ -333,6 +340,7 @@ def update_row(
 
 @router.post("/{widget_id}/delete", name="widgets_delete")
 def delete_row(request: Request, session: DbSession, current_user: CurrentUser, widget_id: int):
+    auth.require_write(current_user)
     row = _get(session, widget_id)
     audit.delete(session, row)
     return RedirectResponse(request.url_for("widgets_list"), status_code=303)

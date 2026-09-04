@@ -78,6 +78,24 @@ So a spec change flows into untouched files and stops at the ones you edited;
 the run tells you which. `--force` overwrites kept files and is the only way to
 lose work.
 
+### Roles
+
+`admin` and `editor` write; `viewer` reads. Generated routes call
+`auth.require_write(current_user)` before every mutation and return 403 — the
+hidden New/Save/Delete controls are cosmetic, the refusal is server-side.
+`sensitive` fields are admin-only on top of that.
+
+### Known limitation: auth is mocked
+
+There is no login. The current user is whatever id sits in the unsigned
+`current_user_id` cookie, so anyone can set it to the admin's id and act as
+them; the header dropdown does exactly that on purpose, because switching roles
+is how you see the foundation work. **This is a demo affordance and not
+authentication** — before this faces a real user it needs a real login and a
+signed session cookie. Nothing else in the system depends on how the current
+user is established, so replacing `foundation/auth.py::current_user` is the
+whole change.
+
 ### Writes and sensitive fields
 
 Generated routes call `audit.insert` / `audit.update` / `audit.delete` and never

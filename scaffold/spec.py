@@ -38,6 +38,9 @@ ENUM = "enum"
 FK = "fk"
 FIELD_TYPES = (TEXT, NUMBER, DATE, BOOL, ENUM, FK)
 
+#: Enum values are stored in a column this wide; codegen emits the same number.
+ENUM_LENGTH = 64
+
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 _RESERVED_FIELD_NAMES = frozenset({"id", "created_at", "updated_at"})
 _FIELD_KEYS = frozenset({"name", "type", "label", "required", "sensitive", "options", "target"})
@@ -146,8 +149,13 @@ def _parse_field(raw: Any, index: int) -> Field:
 
     options = _parse_options(raw, where, field_type)
     target = _parse_target(raw, where, field_type)
-    required = bool(raw.get("required", False))
-    sensitive = bool(raw.get("sensitive", False))
+    required = _flag(raw, "required", where)
+    sensitive = _flag(raw, "sensitive", where)
+    if required and field_type == BOOL:
+        raise SpecError(
+            f"{where}: a bool cannot be required — an unchecked box submits nothing, "
+            "so the value would always be allowed to be false"
+        )
     if required and sensitive:
         raise SpecError(
             f"{where}: a field cannot be both required and sensitive — "
@@ -181,6 +189,16 @@ def _parse_options(raw: dict[str, Any], where: str, field_type: str) -> tuple[st
     values = tuple(str(option) for option in options)
     if len(set(values)) != len(values):
         raise SpecError(f"{where}: duplicate enum options")
+    for value in values:
+        if not value.strip():
+            raise SpecError(f"{where}: enum options cannot be blank")
+        if len(value) > ENUM_LENGTH:
+            raise SpecError(
+                f"{where}: enum option {value!r} is longer than the "
+                f"{ENUM_LENGTH} characters the column holds"
+            )
+        if any(character in value for character in "\r\n\x00"):
+            raise SpecError(f"{where}: enum option {value!r} contains a control character")
     return values
 
 
@@ -195,6 +213,18 @@ def _parse_target(raw: dict[str, Any], where: str, field_type: str) -> str | Non
     return _identifier(target, f"{where}.target")
 
 
+def _flag(raw: dict[str, Any], key: str, where: str) -> bool:
+    """A flag is a YAML boolean.
+
+    ``bool("false")`` is ``True``, so a quoted flag would quietly mean the
+    opposite of what it says; the spec says so rather than guessing.
+    """
+    value = raw.get(key, False)
+    if not isinstance(value, bool):
+        raise SpecError(f"{where}.{key}: expected true or false, got {value!r}")
+    return value
+
+
 def _reject_unknown_keys(raw: dict[str, Any], allowed: frozenset[str], where: str) -> None:
     unknown = sorted(set(raw) - allowed)
     if unknown:
@@ -202,11 +232,28 @@ def _reject_unknown_keys(raw: dict[str, Any], allowed: frozenset[str], where: st
 
 
 def _reject_duplicates(fields: tuple[Field, ...]) -> None:
-    seen: set[str] = set()
-    for field in fields:
-        if field.column_name in seen:
-            raise SpecError(f"duplicate field {field.name!r}")
-        seen.add(field.column_name)
+    """Every attribute a field puts on the model has to be its own.
+
+    An fk claims two of them — the ``_id`` column and the relationship named
+    after the field — and a second field landing on either one would silently
+    overwrite it in the generated class.
+    """
+    seen: dict[str, int] = {}
+    for index, field in enumerate(fields):
+        claimed = {field.column_name}
+        if field.is_reference:
+            claimed.add(field.name)
+        for attribute in sorted(claimed):
+            owner = seen.get(attribute)
+            if owner is None:
+                seen[attribute] = index
+                continue
+            if fields[owner].name == field.name and fields[owner].type == field.type:
+                raise SpecError(f"duplicate field {field.name!r}")
+            raise SpecError(
+                f"field {field.name!r} collides with {fields[owner].name!r}: "
+                f"both would define {attribute!r} on the model"
+            )
 
 
 def _identifier(value: Any, where: str) -> str:

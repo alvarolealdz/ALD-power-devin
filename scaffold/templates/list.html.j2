@@ -4,7 +4,7 @@
 {% block content %}
   <div class="toolbar">
     <h1>[[ spec.title ]]</h1>
-    <a href="{{ new_url }}">New [[ spec.singular_title|lower ]]</a>
+    {% if new_url %}<a href="{{ new_url }}">New [[ spec.singular_title|lower ]]</a>{% endif %}
   </div>
   {% include "partials/table.html" %}
 {% endblock %}

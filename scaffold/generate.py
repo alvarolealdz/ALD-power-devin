@@ -14,9 +14,9 @@ overwrites anyway, and is the only way to lose work.
 """
 
 import argparse
+import ast
 import hashlib
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -288,8 +288,35 @@ def _existing_migration(spec: Spec, root: Path) -> Path | None:
     return None
 
 
-_REVISION = re.compile(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)[\"']", re.MULTILINE)
-_DOWN = re.compile(r"^down_revision[^=]*=\s*[\"']([^\"']+)[\"']", re.MULTILINE)
+def _revision_ids(source: str, name: str) -> set[str]:
+    """The strings a migration assigns to ``revision`` / ``down_revision``.
+
+    A merge revision names several parents in a tuple, so this reads the
+    assignment rather than the first quoted word after it; missing one parent
+    would leave it looking like a second head forever.
+    """
+    try:
+        module = ast.parse(source)
+    except SyntaxError:
+        return set()
+    found: set[str] = set()
+    for node in module.body:
+        if not isinstance(node, ast.Assign | ast.AnnAssign):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if not any(isinstance(item, ast.Name) and item.id == name for item in targets):
+            continue
+        if node.value is None:
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (ValueError, TypeError, SyntaxError):
+            continue
+        if isinstance(value, str):
+            found.add(value)
+        elif isinstance(value, tuple | list):
+            found.update(item for item in value if isinstance(item, str))
+    return found
 
 
 def _current_head(root: Path) -> str | None:
@@ -299,10 +326,8 @@ def _current_head(root: Path) -> str | None:
     parents: set[str] = set()
     for path in sorted(versions.glob("*.py")):
         source = path.read_text()
-        if match := _REVISION.search(source):
-            revisions.add(match.group(1))
-        if match := _DOWN.search(source):
-            parents.add(match.group(1))
+        revisions |= _revision_ids(source, "revision")
+        parents |= _revision_ids(source, "down_revision")
     heads = revisions - parents
     if len(heads) > 1:
         raise SpecError(

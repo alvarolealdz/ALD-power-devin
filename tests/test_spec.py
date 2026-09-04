@@ -73,3 +73,39 @@ def test_a_field_cannot_be_required_and_sensitive():
 def test_a_bool_cannot_be_sensitive():
     with pytest.raises(SpecError, match="bool cannot be sensitive"):
         parse({**MINIMAL, "fields": [{"name": "flag", "type": "bool", "sensitive": True}]})
+
+
+def test_a_bool_cannot_be_required():
+    """An unchecked box submits nothing, so the requirement could never bite."""
+    with pytest.raises(SpecError, match="bool cannot be required"):
+        parse({**MINIMAL, "fields": [{"name": "flag", "type": "bool", "required": True}]})
+
+
+@pytest.mark.parametrize("value", ["false", "no", 0, 1, None])
+def test_flags_have_to_be_yaml_booleans(value):
+    """``bool("false")`` is True, which would mean the opposite of what it says."""
+    with pytest.raises(SpecError, match="expected true or false"):
+        parse({**MINIMAL, "fields": [{"name": "a", "type": "text", "required": value}]})
+
+
+def test_a_field_cannot_take_an_fks_relationship_name():
+    """The fk defines ``owner`` too, and the second one would overwrite it."""
+    with pytest.raises(SpecError, match="collides"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {"name": "owner", "type": "fk", "target": "user"},
+                    {"name": "owner", "type": "text"},
+                ],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("option", "message"),
+    [("x" * 65, "longer than"), ("", "blank"), ("a\nb", "control character")],
+)
+def test_enum_options_have_to_fit_the_column(option, message):
+    with pytest.raises(SpecError, match=message):
+        parse({**MINIMAL, "fields": [{"name": "a", "type": "enum", "options": [option]}]})

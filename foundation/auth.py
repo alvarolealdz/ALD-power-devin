@@ -11,13 +11,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from foundation.config import CURRENT_USER_COOKIE
 from foundation.db import session_scope
-from foundation.models import ROLE_ADMIN, User
+from foundation.models import ROLE_ADMIN, ROLE_EDITOR, User
 
 
 class _Actor:
@@ -75,8 +75,23 @@ def acting_as(user: User | int) -> Iterator[None]:
 
 
 def is_admin(user: User | None) -> bool:
-    """Whether ``user`` may see sensitive fields. The only role check in here."""
+    """Whether ``user`` may see sensitive fields."""
     return user is not None and user.role.name == ROLE_ADMIN
+
+
+def can_write(user: User | None) -> bool:
+    """Whether ``user`` may change rows. Viewers read; the other two write."""
+    return user is not None and user.role.name in (ROLE_ADMIN, ROLE_EDITOR)
+
+
+def require_write(user: User | None) -> None:
+    """Refuse a write for a role that has no business making one.
+
+    Hiding the buttons is decoration: an app has to say no to the request
+    itself, so every generated write endpoint starts here.
+    """
+    if not can_write(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "your role cannot change this")
 
 
 def list_users(session: Session) -> list[User]:

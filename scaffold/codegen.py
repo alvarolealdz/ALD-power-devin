@@ -10,10 +10,20 @@ from pathlib import Path
 from typing import Any
 
 from foundation.forms import NUMBER_PRECISION, NUMBER_SCALE
-from scaffold.spec import BOOL, DATE, ENUM, FK, NUMBER, TEXT, Field, Spec, SpecError
+from scaffold.spec import (
+    BOOL,
+    DATE,
+    ENUM,
+    ENUM_LENGTH,
+    FK,
+    NUMBER,
+    TEXT,
+    Field,
+    Spec,
+    SpecError,
+)
 
 TEXT_LENGTH = 255
-ENUM_LENGTH = 64
 NUMERIC = f"Numeric({NUMBER_PRECISION}, {NUMBER_SCALE})"
 
 #: Foreign keys the foundation always offers. Anything else must be another
@@ -122,11 +132,7 @@ def model_relationship(spec: Spec, field: Field, references: dict[str, Reference
 
 
 def model_check_constraint(spec: Spec, field: Field) -> str:
-    values = ", ".join(f"'{option}'" for option in field.options)
-    condition = f"{field.name} IN ({values})"
-    if not field.required:
-        condition = f"{field.name} IS NULL OR {condition}"
-    return f'CheckConstraint("{condition}", name="ck_{spec.table_name}_{field.name}")'
+    return f'CheckConstraint({_check_condition(field)!r}, name="ck_{spec.table_name}_{field.name}")'
 
 
 def model_imports(spec: Spec, references: dict[str, Reference]) -> str:
@@ -324,11 +330,28 @@ def migration_column(field: Field, references: dict[str, Reference]) -> str:
 
 
 def migration_constraint(spec: Spec, field: Field) -> str:
-    values = ", ".join(f"'{option}'" for option in field.options)
+    return (
+        f'sa.CheckConstraint({_check_condition(field)!r}, name="ck_{spec.table_name}_{field.name}")'
+    )
+
+
+def _check_condition(field: Field) -> str:
+    """``col IN (...)`` with the options as SQL string literals.
+
+    The options come from a file someone wrote, so they are quoted rather than
+    pasted: a lone apostrophe would otherwise end the literal and leave the
+    rest of the option standing as SQL in a migration that gets executed.
+    """
+    values = ", ".join(_sql_string(option) for option in field.options)
     condition = f"{field.name} IN ({values})"
     if not field.required:
         condition = f"{field.name} IS NULL OR {condition}"
-    return f'sa.CheckConstraint("{condition}", name="ck_{spec.table_name}_{field.name}")'
+    return condition
+
+
+def _sql_string(value: str) -> str:
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
 
 
 # --- helpers ------------------------------------------------------------------

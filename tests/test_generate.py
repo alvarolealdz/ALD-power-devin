@@ -3,8 +3,15 @@
 import compileall
 import textwrap
 
+import alembic
 import pytest
+import sqlalchemy as sa
+from sqlalchemy import create_engine
+from sqlalchemy.dialects import sqlite
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.schema import CreateTable
 
+from foundation.write_guard import raw_writes_allowed
 from scaffold import generate
 from scaffold.spec import SpecError
 
@@ -160,6 +167,81 @@ def test_unknown_fk_target_is_refused_before_anything_is_written(root, spec_path
     with pytest.raises(SpecError, match="not a table I can find"):
         generate.generate(spec_path, root=root)
     assert not (root / "apps" / "widgets").exists()
+
+
+def test_hostile_enum_options_cannot_escape_the_generated_sql(root, spec_path, monkeypatch):
+    """The options are someone's YAML, and they end up inside executed SQL."""
+    spec_path.write_text(
+        "entity: widget\nfields:\n"
+        "  - name: status\n    type: enum\n"
+        "    options:\n"
+        '      - "a\') OR 1=1 --"\n'
+        '      - "o\'brien"\n'
+    )
+    generate.generate(spec_path, root=root)
+
+    migration = next((root / "migrations" / "versions").glob("*_create_widgets.py"))
+    metadata = sa.MetaData()
+    monkeypatch.setattr(alembic, "op", _CreateTableRecorder(metadata))
+    create_sql = _create_table_sql(migration.read_text(), metadata)
+    engine = create_engine("sqlite://")
+    # The table is created and probed directly here; no app rows are involved.
+    with raw_writes_allowed(), engine.begin() as connection:
+        connection.exec_driver_sql(create_sql)
+        connection.exec_driver_sql(_insert("o'brien"))
+        with pytest.raises(IntegrityError):
+            connection.exec_driver_sql(_insert("nope"))
+
+
+def _insert(status: str) -> str:
+    escaped = status.replace("'", "''")
+    return f"INSERT INTO widget (status, created_at) VALUES ('{escaped}', '2026-01-01')"
+
+
+def _create_table_sql(migration_source: str, metadata: sa.MetaData) -> str:
+    """The CREATE TABLE the migration would run, without an Alembic context."""
+    namespace: dict = {}
+    exec(compile(migration_source, "<migration>", "exec"), namespace)  # noqa: S102
+    namespace["upgrade"]()
+    return str(CreateTable(metadata.tables["widget"]).compile(dialect=sqlite.dialect()))
+
+
+class _CreateTableRecorder:
+    """Just enough of Alembic's ``op`` to capture the table a migration builds."""
+
+    def __init__(self, metadata: sa.MetaData) -> None:
+        self._metadata = metadata
+
+    def create_table(self, name, *columns, **kwargs):
+        sa.Table(name, self._metadata, *columns, **kwargs)
+
+    def create_index(self, *args, **kwargs):
+        pass
+
+
+def test_a_merge_revision_is_a_head_not_two(root, spec_path):
+    """Merge parents are a tuple; missing them looks like a branched history."""
+    versions = root / "migrations" / "versions"
+    (versions / "other0001_other.py").write_text(
+        '"""other"""\nrevision: str = "other001"\ndown_revision: str | None = "base0001"\n'
+    )
+    (versions / "merge0001_merge.py").write_text(
+        '"""merge"""\nrevision: str = "merge001"\n'
+        'down_revision: tuple[str, ...] = ("base0001", "other001")\n'
+    )
+
+    generate.generate(spec_path, root=root)
+
+    migration = next(versions.glob("*_create_widgets.py")).read_text()
+    assert 'down_revision: str | None = "merge001"' in migration
+
+
+def test_genuinely_divergent_history_still_refuses(root, spec_path):
+    (root / "migrations" / "versions" / "other0001_other.py").write_text(
+        '"""other"""\nrevision: str = "other001"\ndown_revision: str | None = None\n'
+    )
+    with pytest.raises(SpecError, match="more than one head"):
+        generate.generate(spec_path, root=root)
 
 
 def test_fk_can_point_at_another_generated_app(root, spec_path):
