@@ -204,6 +204,20 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
             "type": "text",
         },
     ]
+    workflow_value = values.get(WORKFLOW_FIELD)
+    if workflow_value in STATUS_OPTIONS:
+        workflow_options = (
+            workflow_value,
+            *STATUS_TRANSITIONS.get(
+                workflow_value,
+                tuple(option for option in STATUS_OPTIONS if option != workflow_value),
+            ),
+        )
+        for field in fields:
+            if field["name"] == WORKFLOW_FIELD:
+                field["options"] = [
+                    {"value": option, "label": option} for option in workflow_options
+                ]
     if admin:
         fields.extend(
             [
@@ -582,6 +596,16 @@ def update_row(
         admin,
     )
     _check_references(session, values, errors)
+    if (
+        WORKFLOW_FIELD in values
+        and values[WORKFLOW_FIELD] != row.status
+        and values[WORKFLOW_FIELD]
+        not in STATUS_TRANSITIONS.get(
+            row.status,
+            tuple(option for option in STATUS_OPTIONS if option != row.status),
+        )
+    ):
+        errors[WORKFLOW_FIELD] = "transition not allowed"
     if errors:
         return _form_page(
             request,

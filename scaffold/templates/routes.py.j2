@@ -120,6 +120,26 @@ def _fields(
         [[ field_form[field.name] ]],
 [% endfor %]
     ]
+[% if spec.workflow_field %]
+    workflow_value = values.get(WORKFLOW_FIELD)
+    if workflow_value in [[ spec.workflow_field.name|upper ]]_OPTIONS:
+        workflow_options = (
+            workflow_value,
+            *[[ spec.workflow_field.name|upper ]]_TRANSITIONS.get(
+                workflow_value,
+                tuple(
+                    option
+                    for option in [[ spec.workflow_field.name|upper ]]_OPTIONS
+                    if option != workflow_value
+                ),
+            ),
+        )
+        for field in fields:
+            if field["name"] == WORKFLOW_FIELD:
+                field["options"] = [
+                    {"value": option, "label": option} for option in workflow_options
+                ]
+[% endif %]
 [% if spec.sensitive_fields %]
     if admin:
         fields.extend(
@@ -494,6 +514,22 @@ def update_row(
     values, errors = _parse([[ submitted_dict ]], admin)
 [% if reference_rows %]
     _check_references(session, values, errors)
+[% endif %]
+[% if spec.workflow_field %]
+    if (
+        WORKFLOW_FIELD in values
+        and values[WORKFLOW_FIELD] != row.[[ spec.workflow_field.name ]]
+        and values[WORKFLOW_FIELD]
+        not in [[ spec.workflow_field.name|upper ]]_TRANSITIONS.get(
+            row.[[ spec.workflow_field.name ]],
+            tuple(
+                option
+                for option in [[ spec.workflow_field.name|upper ]]_OPTIONS
+                if option != row.[[ spec.workflow_field.name ]]
+            ),
+        )
+    ):
+        errors[WORKFLOW_FIELD] = "transition not allowed"
 [% endif %]
     if errors:
         return _form_page(

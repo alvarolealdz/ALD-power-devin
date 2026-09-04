@@ -449,3 +449,74 @@ def test_kyc_workflow_transitions_limit_decisions(client, session, editor, seede
         r'<span class="stat-value">1</span><span class="stat-label">Decided today</span>',
         queue.text,
     )
+
+
+def test_kyc_edit_form_enforces_workflow_transitions(client, session, editor, seeded):
+    def create_review(reference, status):
+        response = client.post(
+            "/kyc-queue",
+            data={
+                "customer_name": "Ada Lovelace",
+                "customer_ref": reference,
+                "risk_score": "10",
+                "status": status,
+                "submitted_on": "2026-01-01",
+                "reviewer_id": str(seeded.id),
+                "notes": "Initial review",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        return session.scalars(select(KycReview).where(KycReview.customer_ref == reference)).one()
+
+    approved = create_review("CUS-003", "approved")
+    as_user(client, editor)
+    form = client.get(f"/kyc-queue/{approved.id}/edit")
+    assert form.status_code == 200
+    assert '<option value="pending"' not in form.text
+
+    updates_before = session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "kyc_review",
+            AuditLog.row_id == str(approved.id),
+            AuditLog.action == AuditLog.ACTION_UPDATE,
+        )
+    ).all()
+    blocked = client.post(
+        f"/kyc-queue/{approved.id}",
+        data={"status": "pending", "notes": "Should be rejected"},
+        follow_redirects=False,
+    )
+    assert blocked.status_code == 400
+    assert "transition not allowed" in blocked.text
+    session.refresh(approved)
+    assert approved.status == "approved"
+    updates_after = session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "kyc_review",
+            AuditLog.row_id == str(approved.id),
+            AuditLog.action == AuditLog.ACTION_UPDATE,
+        )
+    ).all()
+    assert len(updates_after) == len(updates_before)
+
+    unchanged = client.post(
+        f"/kyc-queue/{approved.id}",
+        data={"status": "approved", "notes": "Updated notes"},
+        follow_redirects=False,
+    )
+    assert unchanged.status_code == 303
+    session.refresh(approved)
+    assert approved.notes == "Updated notes"
+
+    as_user(client, seeded)
+    pending = create_review("CUS-004", "pending")
+    as_user(client, editor)
+    response = client.post(
+        f"/kyc-queue/{pending.id}",
+        data={"status": "approved", "notes": "Approved in edit form"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    session.refresh(pending)
+    assert pending.status == "approved"
