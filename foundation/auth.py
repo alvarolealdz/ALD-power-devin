@@ -94,6 +94,12 @@ def require_write(user: User | None) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "your role cannot change this")
 
 
+def require_admin(user: User | None) -> None:
+    """Refuse anyone but an admin."""
+    if not is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only an admin can do this")
+
+
 def list_users(session: Session) -> list[User]:
     return list(session.scalars(select(User).order_by(User.display_name)))
 

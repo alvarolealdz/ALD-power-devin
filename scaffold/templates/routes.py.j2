@@ -161,7 +161,11 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "empty": "No [[ spec.title|lower ]] yet.",
             "new_url": (
                 str(request.url_for("[[ spec.app ]]_new"))
+[% if spec.create_is_admin_only %]
+                if auth.is_admin(current_user)
+[% else %]
                 if auth.can_write(current_user)
+[% endif %]
                 else None
             ),
         },
@@ -170,7 +174,11 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
 
 @router.get("/new", name="[[ spec.app ]]_new")
 def new_row(request: Request, session: DbSession, current_user: CurrentUser):
+[% if spec.create_is_admin_only %]
+    auth.require_admin(current_user)
+[% else %]
     auth.require_write(current_user)
+[% endif %]
     admin = auth.is_admin(current_user)
     return _form_page(
         request,
@@ -192,7 +200,11 @@ def create_row(
     [[ line ]]
 [% endfor %]
 ):
+[% if spec.create_is_admin_only %]
+    auth.require_admin(current_user)
+[% else %]
     auth.require_write(current_user)
+[% endif %]
     admin = auth.is_admin(current_user)
     values, errors = _parse([[ submitted_dict ]], admin)
 [% if reference_rows %]

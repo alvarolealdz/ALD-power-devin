@@ -115,6 +115,11 @@ class Spec:
         """The fields everyone sees. Sensitive ones are added back for admins only."""
         return tuple(field for field in self.fields if not field.sensitive)
 
+    @property
+    def create_is_admin_only(self) -> bool:
+        """A required field nobody but an admin can see means nobody but an admin can create."""
+        return any(field.required and field.sensitive for field in self.fields)
+
 
 def load(path: str | Path) -> Spec:
     """Read and validate a spec file."""
@@ -175,11 +180,6 @@ def _parse_field(raw: Any, index: int) -> Field:
         raise SpecError(
             f"{where}: a bool cannot be required — an unchecked box submits nothing, "
             "so the value would always be allowed to be false"
-        )
-    if required and sensitive:
-        raise SpecError(
-            f"{where}: a field cannot be both required and sensitive — "
-            "non-admins never see it, so they could never satisfy it"
         )
     if sensitive and field_type == BOOL:
         raise SpecError(

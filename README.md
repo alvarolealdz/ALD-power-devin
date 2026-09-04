@@ -48,6 +48,8 @@ fields:
     sensitive: true     # admin-only, server-side, in the list and the form
 ```
 
+A field that is both `required` and `sensitive` makes creation admin-only.
+
 `uv run python scaffold/generate.py specs/<name>.yaml` writes
 `apps/<name>/{model,routes,templates}` and one Alembic migration chained onto
 the current head. What comes out is ordinary code: a normal SQLAlchemy model, a

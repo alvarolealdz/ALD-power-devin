@@ -66,15 +66,15 @@ def test_bad_specs_are_rejected(raw, message):
         parse(raw)
 
 
-def test_a_field_cannot_be_required_and_sensitive():
-    """A non-admin never sees it, so requiring it would lock them out of the form."""
-    with pytest.raises(SpecError, match="required and sensitive"):
-        parse(
-            {
-                **MINIMAL,
-                "fields": [{"name": "note", "type": "text", "required": True, "sensitive": True}],
-            }
-        )
+def test_required_sensitive_fields_make_create_admin_only():
+    spec = parse(
+        {
+            **MINIMAL,
+            "fields": [{"name": "note", "type": "text", "required": True, "sensitive": True}],
+        }
+    )
+    assert spec.create_is_admin_only is True
+    assert parse(MINIMAL).create_is_admin_only is False
 
 
 def test_a_bool_cannot_be_sensitive():

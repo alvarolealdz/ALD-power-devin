@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from apps.kyc_queue.model import KycReview
 from apps.widgets.model import Widget
 from foundation import audit, auth, discovery
 from foundation.app import app
@@ -226,3 +227,76 @@ def test_a_non_admin_cannot_submit_a_sensitive_field(client, session, editor, wi
 
     row = session.scalars(select(Widget)).one()
     assert row.internal_note == "confidential"
+
+
+def test_required_sensitive_fields_make_creation_admin_only(
+    client, session, editor, viewer, seeded
+):
+    as_user(client, viewer)
+    assert client.post("/kyc-queue", data={"status": "pending"}).status_code == 403
+
+    as_user(client, editor)
+
+    assert client.get("/kyc-queue/new").status_code == 403
+    response = client.post("/kyc-queue", data={"status": "pending"})
+    assert response.status_code == 403
+    assert session.scalars(select(KycReview)).all() == []
+    assert (
+        session.scalars(
+            select(AuditLog).where(
+                AuditLog.table_name == "kyc_review", AuditLog.action == AuditLog.ACTION_INSERT
+            )
+        ).all()
+        == []
+    )
+    assert "New kyc review" not in client.get("/kyc-queue").text
+
+    as_user(client, seeded)
+    response = client.post(
+        "/kyc-queue",
+        data={
+            "customer_name": "Ada Lovelace",
+            "customer_ref": "CUS-001",
+            "risk_score": "42.5",
+            "status": "pending",
+            "submitted_on": "2026-01-01",
+            "reviewer_id": str(seeded.id),
+            "notes": "Initial review",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    row = session.scalars(select(KycReview)).one()
+    assert (row.customer_name, row.customer_ref, row.reviewer_id) == (
+        "Ada Lovelace",
+        "CUS-001",
+        seeded.id,
+    )
+    assert (
+        session.scalars(
+            select(AuditLog).where(
+                AuditLog.table_name == "kyc_review", AuditLog.action == AuditLog.ACTION_INSERT
+            )
+        ).one()
+    )
+    assert "New kyc review" in client.get("/kyc-queue").text
+
+    as_user(client, editor)
+    response = client.post(
+        f"/kyc-queue/{row.id}",
+        data={"status": "approved", "notes": "Updated by editor"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    session.refresh(row)
+    assert (row.customer_name, row.customer_ref, row.notes) == (
+        "Ada Lovelace",
+        "CUS-001",
+        "Updated by editor",
+    )
+    listing = client.get("/kyc-queue")
+    form = client.get(f"/kyc-queue/{row.id}")
+    assert "Ada Lovelace" not in listing.text
+    assert "CUS-001" not in listing.text
+    assert "Ada Lovelace" not in form.text
+    assert "CUS-001" not in form.text
