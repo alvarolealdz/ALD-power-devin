@@ -68,10 +68,6 @@ def test_foundation_route_names_are_reserved():
         path.strip("/").split("/")[0]
         for route in app.routes
         if (path := getattr(route, "path", None))
-        and (
-            route.__class__.__name__ == "Mount"
-            or getattr(getattr(route, "endpoint", None), "__module__", None) == "foundation.app"
-        )
         and path.strip("/")
         and not path.strip("/").split("/")[0].startswith("{")
     }

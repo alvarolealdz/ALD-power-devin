@@ -43,7 +43,17 @@ ENUM_LENGTH = 64
 
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 _RESERVED_FIELD_NAMES = frozenset({"id", "created_at", "updated_at", "metadata", "registry"})
-_RESERVED_APP_NAMES = frozenset({"health", "static", "switch_user", "switch-user"})
+_RESERVED_APP_NAMES = frozenset(
+    {
+        "health",
+        "static",
+        "switch_user",
+        "switch-user",
+        "docs",
+        "redoc",
+        "openapi.json",
+    }
+)
 _FOUNDATION_TABLES = frozenset({"user", "role", "audit_log"})
 _FIELD_KEYS = frozenset({"name", "type", "label", "required", "sensitive", "options", "target"})
 _SPEC_KEYS = frozenset({"app", "entity", "title", "fields"})
