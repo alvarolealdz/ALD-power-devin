@@ -20,6 +20,7 @@ from foundation.templating import templates
 
 TITLE = "KYC review queue"
 DESCRIPTION = "Customer due-diligence cases waiting for a reviewer's decision."
+SINGULAR = "KYC review"
 MODEL = KycReview
 
 router = APIRouter(prefix="/kyc-queue", tags=["kyc_queue"])
@@ -35,24 +36,46 @@ def _get(session: Session, kyc_review_id: int) -> KycReview:
 def _columns(admin: bool) -> list[dict[str, str]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
     columns = []
-    columns.append({"key": "risk_score", "label": "Risk score", "kind": "link"})
-    columns.append({"key": "status", "label": "Status", "kind": "badge"})
-    columns.append({"key": "submitted_on", "label": "Submitted on", "kind": "date"})
-    columns.append({"key": "reviewer", "label": "Reviewer", "kind": "text"})
-    columns.append({"key": "notes", "label": "Notes", "kind": "text"})
     if admin:
-        columns.append({"key": "customer_name", "label": "Customer name", "kind": "text"})
-        columns.append({"key": "customer_ref", "label": "Customer ref", "kind": "text"})
+        columns.append(
+            {
+                "key": "customer_name",
+                "label": "Customer name",
+                "kind": ("link" if not columns else "text"),
+            }
+        )
+    if admin:
+        columns.append(
+            {
+                "key": "customer_ref",
+                "label": "Customer ref",
+                "kind": ("link" if not columns else "text"),
+            }
+        )
+    columns.append(
+        {"key": "risk_score", "label": "Risk score", "kind": ("link" if not columns else "number")}
+    )
+    columns.append(
+        {"key": "status", "label": "Status", "kind": ("link" if not columns else "badge")}
+    )
+    columns.append(
+        {
+            "key": "submitted_on",
+            "label": "Submitted on",
+            "kind": ("link" if not columns else "date"),
+        }
+    )
+    columns.append(
+        {"key": "reviewer", "label": "Reviewer", "kind": ("link" if not columns else "text")}
+    )
+    columns.append({"key": "notes", "label": "Notes", "kind": ("link" if not columns else "text")})
     columns.append({"key": "id", "label": "ID", "kind": "id"})
     return columns
 
 
 def _row(request: Request, row: KycReview, admin: bool) -> dict[str, object]:
     data: dict[str, object] = {
-        "risk_score": {
-            "label": forms.display(row.risk_score),
-            "href": str(request.url_for("kyc_queue_detail", kyc_review_id=row.id)),
-        },
+        "risk_score": forms.display(row.risk_score),
         "status": (
             None
             if row.status is None
@@ -64,17 +87,43 @@ def _row(request: Request, row: KycReview, admin: bool) -> dict[str, object]:
         "submitted_on": forms.display(row.submitted_on),
         "reviewer": forms.display(row.reviewer.display_name if row.reviewer else None),
         "notes": forms.display(row.notes),
-        "edit_url": str(request.url_for("kyc_queue_edit", kyc_review_id=row.id)),
     }
     if admin:
         data["customer_name"] = forms.display(row.customer_name)
         data["customer_ref"] = forms.display(row.customer_ref)
-    return data
+    ordered = {
+        key: data[key]
+        for key in [
+            "customer_name",
+            "customer_ref",
+            "risk_score",
+            "status",
+            "submitted_on",
+            "reviewer",
+            "notes",
+        ]
+        if key in data
+    }
+    if ordered:
+        first_key = next(iter(ordered))
+        first_value = ordered[first_key]
+        ordered[first_key] = {
+            "label": first_value["label"] if isinstance(first_value, dict) else first_value,
+            "href": str(request.url_for("kyc_queue_detail", kyc_review_id=row.id)),
+        }
+    ordered["id"] = row.id
+    ordered["edit_url"] = str(request.url_for("kyc_queue_edit", kyc_review_id=row.id))
+    return ordered
 
 
 def _items(row: KycReview, admin: bool) -> list[dict[str, object]]:
-    items: list[dict[str, object]] = [
-        {"label": "Risk score", "value": forms.display(row.risk_score)},
+    items: list[dict[str, object]] = []
+    if admin:
+        items.append({"label": "Customer name", "value": forms.display(row.customer_name)})
+    if admin:
+        items.append({"label": "Customer ref", "value": forms.display(row.customer_ref)})
+    items.append({"label": "Risk score", "value": forms.display(row.risk_score)})
+    items.append(
         {
             "label": "Status",
             "value": (
@@ -86,21 +135,16 @@ def _items(row: KycReview, admin: bool) -> list[dict[str, object]]:
                 }
             ),
             "kind": "badge",
-        },
-        {"label": "Submitted on", "value": forms.display(row.submitted_on)},
+        }
+    )
+    items.append({"label": "Submitted on", "value": forms.display(row.submitted_on)})
+    items.append(
         {
             "label": "Reviewer",
             "value": forms.display(row.reviewer.display_name if row.reviewer else None),
-        },
-        {"label": "Notes", "value": forms.display(row.notes)},
-    ]
-    if admin:
-        items.extend(
-            [
-                {"label": "Customer name", "value": forms.display(row.customer_name)},
-                {"label": "Customer ref", "value": forms.display(row.customer_ref)},
-            ]
-        )
+        }
+    )
+    items.append({"label": "Notes", "value": forms.display(row.notes)})
     return items
 
 
@@ -270,7 +314,7 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "empty": {
                 "title": "No kyc review queue yet",
                 "text": DESCRIPTION or None,
-                "cta": {"label": "New kyc review", "href": new_url} if new_url else None,
+                "cta": {"label": "New KYC review", "href": new_url} if new_url else None,
             },
             "new_url": new_url,
         },
@@ -288,7 +332,7 @@ def new_row(request: Request, session: DbSession, current_user: CurrentUser):
         {},
         admin,
         action=str(request.url_for("kyc_queue_create")),
-        heading="New Kyc review",
+        heading="New KYC review",
     )
 
 
@@ -328,7 +372,7 @@ def create_row(
             errors,
             admin,
             action=str(request.url_for("kyc_queue_create")),
-            heading="New Kyc review",
+            heading="New KYC review",
             status_code=400,
         )
     row = KycReview(**values)
@@ -356,7 +400,7 @@ def detail_row(request: Request, session: DbSession, current_user: CurrentUser, 
         request,
         "kyc_queue/detail.html",
         {
-            "title": f"Kyc review {row.id}",
+            "title": f"{SINGULAR} {row.id}",
             "row_id": row.id,
             "items": _items(row, admin),
             "list_url": str(request.url_for("kyc_queue_list")),
@@ -416,7 +460,7 @@ def edit_row(request: Request, session: DbSession, current_user: CurrentUser, ky
         {},
         admin,
         action=str(request.url_for("kyc_queue_update", kyc_review_id=row.id)),
-        heading=f"Edit Kyc review {row.id}",
+        heading=f"Edit KYC review {row.id}",
         writable=auth.can_write(current_user),
         delete_url=str(request.url_for("kyc_queue_delete", kyc_review_id=row.id)),
         detail_url=str(request.url_for("kyc_queue_detail", kyc_review_id=row.id)),
@@ -461,7 +505,7 @@ def update_row(
             errors,
             admin,
             action=str(request.url_for("kyc_queue_update", kyc_review_id=row.id)),
-            heading=f"Edit Kyc review {row.id}",
+            heading=f"Edit KYC review {row.id}",
             delete_url=str(request.url_for("kyc_queue_delete", kyc_review_id=row.id)),
             detail_url=str(request.url_for("kyc_queue_detail", kyc_review_id=row.id)),
             status_code=400,

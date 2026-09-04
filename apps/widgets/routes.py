@@ -19,6 +19,7 @@ from foundation.templating import templates
 
 TITLE = "Widgets"
 DESCRIPTION = "Example app generated from a neutral spec."
+SINGULAR = "Widget"
 MODEL = Widget
 
 router = APIRouter(prefix="/widgets", tags=["widgets"])
@@ -34,24 +35,35 @@ def _get(session: Session, widget_id: int) -> Widget:
 def _columns(admin: bool) -> list[dict[str, str]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
     columns = []
-    columns.append({"key": "label", "label": "Label", "kind": "link"})
-    columns.append({"key": "quantity", "label": "Quantity", "kind": "number"})
-    columns.append({"key": "due_on", "label": "Due on", "kind": "date"})
-    columns.append({"key": "active", "label": "Active", "kind": "text"})
-    columns.append({"key": "status", "label": "Status", "kind": "badge"})
-    columns.append({"key": "owner", "label": "Owner", "kind": "text"})
+    columns.append({"key": "label", "label": "Label", "kind": ("link" if not columns else "text")})
+    columns.append(
+        {"key": "quantity", "label": "Quantity", "kind": ("link" if not columns else "number")}
+    )
+    columns.append(
+        {"key": "due_on", "label": "Due on", "kind": ("link" if not columns else "date")}
+    )
+    columns.append(
+        {"key": "active", "label": "Active", "kind": ("link" if not columns else "text")}
+    )
+    columns.append(
+        {"key": "status", "label": "Status", "kind": ("link" if not columns else "badge")}
+    )
+    columns.append({"key": "owner", "label": "Owner", "kind": ("link" if not columns else "text")})
     if admin:
-        columns.append({"key": "internal_note", "label": "Internal note", "kind": "text"})
+        columns.append(
+            {
+                "key": "internal_note",
+                "label": "Internal note",
+                "kind": ("link" if not columns else "text"),
+            }
+        )
     columns.append({"key": "id", "label": "ID", "kind": "id"})
     return columns
 
 
 def _row(request: Request, row: Widget, admin: bool) -> dict[str, object]:
     data: dict[str, object] = {
-        "label": {
-            "label": forms.display(row.label),
-            "href": str(request.url_for("widgets_detail", widget_id=row.id)),
-        },
+        "label": forms.display(row.label),
         "quantity": forms.display(row.quantity),
         "due_on": forms.display(row.due_on),
         "active": forms.display(row.active),
@@ -64,19 +76,33 @@ def _row(request: Request, row: Widget, admin: bool) -> dict[str, object]:
             }
         ),
         "owner": forms.display(row.owner.display_name if row.owner else None),
-        "edit_url": str(request.url_for("widgets_edit", widget_id=row.id)),
     }
     if admin:
         data["internal_note"] = forms.display(row.internal_note)
-    return data
+    ordered = {
+        key: data[key]
+        for key in ["label", "quantity", "due_on", "active", "status", "owner", "internal_note"]
+        if key in data
+    }
+    if ordered:
+        first_key = next(iter(ordered))
+        first_value = ordered[first_key]
+        ordered[first_key] = {
+            "label": first_value["label"] if isinstance(first_value, dict) else first_value,
+            "href": str(request.url_for("widgets_detail", widget_id=row.id)),
+        }
+    ordered["id"] = row.id
+    ordered["edit_url"] = str(request.url_for("widgets_edit", widget_id=row.id))
+    return ordered
 
 
 def _items(row: Widget, admin: bool) -> list[dict[str, object]]:
-    items: list[dict[str, object]] = [
-        {"label": "Label", "value": forms.display(row.label)},
-        {"label": "Quantity", "value": forms.display(row.quantity)},
-        {"label": "Due on", "value": forms.display(row.due_on)},
-        {"label": "Active", "value": forms.display(row.active)},
+    items: list[dict[str, object]] = []
+    items.append({"label": "Label", "value": forms.display(row.label)})
+    items.append({"label": "Quantity", "value": forms.display(row.quantity)})
+    items.append({"label": "Due on", "value": forms.display(row.due_on)})
+    items.append({"label": "Active", "value": forms.display(row.active)})
+    items.append(
         {
             "label": "Status",
             "value": (
@@ -88,15 +114,13 @@ def _items(row: Widget, admin: bool) -> list[dict[str, object]]:
                 }
             ),
             "kind": "badge",
-        },
-        {"label": "Owner", "value": forms.display(row.owner.display_name if row.owner else None)},
-    ]
+        }
+    )
+    items.append(
+        {"label": "Owner", "value": forms.display(row.owner.display_name if row.owner else None)}
+    )
     if admin:
-        items.extend(
-            [
-                {"label": "Internal note", "value": forms.display(row.internal_note)},
-            ]
-        )
+        items.append({"label": "Internal note", "value": forms.display(row.internal_note)})
     return items
 
 
@@ -247,7 +271,7 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "empty": {
                 "title": "No widgets yet",
                 "text": DESCRIPTION or None,
-                "cta": {"label": "New widget", "href": new_url} if new_url else None,
+                "cta": {"label": "New Widget", "href": new_url} if new_url else None,
             },
             "new_url": new_url,
         },
@@ -331,7 +355,7 @@ def detail_row(request: Request, session: DbSession, current_user: CurrentUser, 
         request,
         "widgets/detail.html",
         {
-            "title": f"Widget {row.id}",
+            "title": f"{SINGULAR} {row.id}",
             "row_id": row.id,
             "items": _items(row, admin),
             "list_url": str(request.url_for("widgets_list")),
