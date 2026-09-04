@@ -1,0 +1,30 @@
+# Example spec. Deliberately about nothing: swap it for a real one.
+app: widgets
+entity: widget
+title: Widgets
+
+fields:
+  - name: label
+    type: text
+    required: true
+
+  - name: quantity
+    type: number
+
+  - name: due_on
+    type: date
+
+  - name: active
+    type: bool
+
+  - name: status
+    type: enum
+    options: [draft, review, done]
+
+  - name: owner
+    type: fk
+    target: user
+
+  - name: internal_note
+    type: text
+    sensitive: true

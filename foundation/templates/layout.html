@@ -10,6 +10,11 @@
   <body>
     <header class="topbar">
       <a class="brand" href="{{ url_for('index') }}">{{ brand|default("Foundation") }}</a>
+      <nav class="nav">
+        {% for entry in nav_apps|default([]) %}
+          <a href="{{ entry.path }}">{{ entry.title }}</a>
+        {% endfor %}
+      </nav>
       {% include "partials/user_switcher.html" %}
     </header>
     <main>

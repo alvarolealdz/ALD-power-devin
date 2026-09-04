@@ -1,0 +1,26 @@
+[[ header ]]
+
+[[ imports ]]
+
+[% for field in enum_fields %]
+[[ field.name|upper ]]_OPTIONS = ([% for option in field.options %]"[[ option ]]", [% endfor %])
+[% endfor %]
+SENSITIVE_FIELDS = ([% for field in spec.sensitive_fields %]"[[ field.column_name ]]", [% endfor %])
+
+
+class [[ spec.class_name ]](Base):
+    """[[ spec.title ]]. Generated once, yours from here on."""
+
+    __tablename__ = "[[ spec.table_name ]]"
+[% if table_args %]    __table_args__ = (
+[% for arg in table_args %]        [[ arg ]],
+[% endfor %]    )
+[% endif %]
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+[% for column in columns %]    [[ column ]]
+[% endfor %]    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+[% for relationship in relationships %]
+    [[ relationship ]]
+[% endfor %]
+    def __repr__(self) -> str:
+        return f"[[ spec.class_name ]](id={self.id})"

@@ -11,13 +11,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from foundation.config import CURRENT_USER_COOKIE
 from foundation.db import session_scope
-from foundation.models import User
+from foundation.models import ROLE_ADMIN, ROLE_EDITOR, User
 
 
 class _Actor:
@@ -74,6 +74,26 @@ def acting_as(user: User | int) -> Iterator[None]:
         reset_current_user_id(token)
 
 
+def is_admin(user: User | None) -> bool:
+    """Whether ``user`` may see sensitive fields."""
+    return user is not None and user.role.name == ROLE_ADMIN
+
+
+def can_write(user: User | None) -> bool:
+    """Whether ``user`` may change rows. Viewers read; the other two write."""
+    return user is not None and user.role.name in (ROLE_ADMIN, ROLE_EDITOR)
+
+
+def require_write(user: User | None) -> None:
+    """Refuse a write for a role that has no business making one.
+
+    Hiding the buttons is decoration: an app has to say no to the request
+    itself, so every generated write endpoint starts here.
+    """
+    if not can_write(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "your role cannot change this")
+
+
 def list_users(session: Session) -> list[User]:
     return list(session.scalars(select(User).order_by(User.display_name)))
 
@@ -92,9 +112,7 @@ def get_db(request: Request) -> Iterator[Session]:
     yield from session_scope()
 
 
-def get_current_user(
-    request: Request, session: Annotated[Session, Depends(get_db)]
-) -> User | None:
+def get_current_user(request: Request, session: Annotated[Session, Depends(get_db)]) -> User | None:
     """Resolve the current user from the cookie, falling back to the first user."""
     raw = request.cookies.get(CURRENT_USER_COOKIE)
     user = None
@@ -104,4 +122,7 @@ def get_current_user(
         user = default_user(session)
     set_current_user_id(user.id if user else None)
     request.state.current_user = user
+    # The switcher is chrome on every page, so the layout reads it from here
+    # rather than each route remembering to pass it.
+    request.state.switchable_users = list_users(session)
     return user

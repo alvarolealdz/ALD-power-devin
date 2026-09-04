@@ -1,25 +1,32 @@
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from foundation import auth
+from foundation import auth, discovery
 from foundation.config import CURRENT_USER_COOKIE, TEMPLATES_DIR
-from foundation.models import AuditLog, User
+from foundation.deps import CurrentUser, DbSession
+from foundation.models import AuditLog
+from foundation.templating import refresh_loader, templates
 
 STATIC_DIR = TEMPLATES_DIR.parent / "static"
-
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 app = FastAPI(title="Foundation")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-DbSession = Annotated[Session, Depends(auth.get_db)]
-CurrentUser = Annotated[User | None, Depends(auth.get_current_user)]
+
+def mount_apps() -> None:
+    """Whatever is in apps/ is part of the site. Nothing here names any of them."""
+    refresh_loader()
+    mounted = discovery.mount(app)
+    templates.env.globals["nav_apps"] = [
+        {"title": item.title, "path": item.router.prefix or f"/{item.name}"} for item in mounted
+    ]
+
+
+mount_apps()
 
 
 @app.middleware("http")
@@ -40,8 +47,12 @@ def health(session: DbSession) -> dict[str, object]:
 @app.get("/")
 def index(request: Request, session: DbSession, current_user: CurrentUser):
     users = auth.list_users(session)
-    entries = list(
-        session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(25))
+    entries = list(session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(25)))
+    # before/after carry whatever the row held, including any app's sensitive
+    # columns, so the payload follows the same rule those columns do.
+    admin = auth.is_admin(current_user)
+    payload_columns = (
+        [{"key": "before", "label": "Before"}, {"key": "after", "label": "After"}] if admin else []
     )
     return templates.TemplateResponse(
         request,
@@ -69,8 +80,7 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
                 {"key": "actor", "label": "Actor"},
                 {"key": "action", "label": "Action"},
                 {"key": "target", "label": "Row"},
-                {"key": "before", "label": "Before"},
-                {"key": "after", "label": "After"},
+                *payload_columns,
             ],
             "audit_rows": [
                 {
@@ -78,8 +88,7 @@ def index(request: Request, session: DbSession, current_user: CurrentUser):
                     "actor": entry.actor_label,
                     "action": entry.action,
                     "target": f"{entry.table_name}#{entry.row_id}",
-                    "before": entry.before,
-                    "after": entry.after,
+                    **({"before": entry.before, "after": entry.after} if admin else {}),
                 }
                 for entry in entries
             ],

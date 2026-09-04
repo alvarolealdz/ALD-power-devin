@@ -23,6 +23,30 @@ body {
   color: inherit;
 }
 
+.nav {
+  display: flex;
+  gap: 1rem;
+  margin-right: auto;
+}
+
+.nav a {
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.row-actions a {
+  margin-right: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 main {
   padding: 1.5rem;
   max-width: 70rem;
