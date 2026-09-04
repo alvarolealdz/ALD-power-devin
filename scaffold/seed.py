@@ -171,7 +171,7 @@ def _value(field: Field, index: int, rng: random.Random, session, references, to
         raw = rng.uniform(float(sample["min"]), float(sample["max"]))
         return forms.number(str(raw), decimals=field.decimals)
     if isinstance(sample, tuple):
-        raw = rng.choice(sample)
+        raw = sample[index % len(sample)]
         if field.type == TEXT:
             return forms.text(raw)
         if field.type == NUMBER:

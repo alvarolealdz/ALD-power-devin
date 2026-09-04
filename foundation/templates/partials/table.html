@@ -64,7 +64,7 @@
                 <form method="post" action="{{ decision.action }}" class="inline">
                   <input type="hidden" name="expected" value="{{ decision.expected }}">
                   <input type="hidden" name="next" value="{{ decision.next }}">
-                  <button class="btn btn-sm tone-{{ decision.tone }}" name="{{ decision.field }}" value="{{ decision.value }}">{{ decision.label|capitalize }}</button>
+                  <button class="btn btn-sm tone-{{ decision.tone }}" name="{{ decision.field }}" value="{{ decision.value }}" title="Mark {{ decision.label }}">{{ decision.label|capitalize }}</button>
                 </form>
               {% endfor %}
               {% for action in actions %}

@@ -100,8 +100,12 @@ def test_append_offsets_reference_values(engine, session, seeded, monkeypatch):
 def test_seed_slug_company_and_number_ranges(engine, session, seeded, monkeypatch):
     monkeypatch.setattr(seed_module, "SessionFactory", lambda: session)
     seed_module.seed(Path("specs/feature_flags.yaml"), rows=12, seed=3, append=False)
-    keys = [row.flag_key for row in session.scalars(select(FeatureFlag))]
+    flags = session.scalars(select(FeatureFlag).order_by(FeatureFlag.id)).all()
+    keys = [row.flag_key for row in flags]
     assert all(" " not in key for key in keys)
+    assert len(set(keys)) == 12
+    assert flags[0].description.startswith("Gates")
+    assert flags[-1].description.startswith("Adds rich notes")
 
     seed_module.seed(
         Path("specs/vendor_contracts.yaml"), rows=5, seed=4, append=False, today=date(2026, 1, 1)

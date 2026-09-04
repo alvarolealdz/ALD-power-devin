@@ -562,7 +562,7 @@ button:disabled,
 }
 
 .cell-text {
-  max-width: 28ch;
+  max-width: 22ch;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -617,8 +617,13 @@ button:disabled,
   white-space: nowrap;
 }
 
+.row-actions > * + * {
+  margin-left: 4px;
+}
+
 .row-actions .btn {
   opacity: 0.55;
+  padding: 4px 8px;
 }
 
 .table tbody tr:hover .row-actions .btn {

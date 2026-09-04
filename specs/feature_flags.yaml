@@ -35,6 +35,8 @@ fields:
       - Shows a preview before an invoice is finalized.
       - Adds activity cards to the main dashboard.
       - Enables shortcut actions in the mobile navigation.
+      - Allows users to request access from settings.
+      - Adds rich notes to support records.
 
   - name: enabled
     type: bool
