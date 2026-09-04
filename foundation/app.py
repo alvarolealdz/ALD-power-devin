@@ -24,7 +24,7 @@ CurrentUser = Annotated[User | None, Depends(auth.get_current_user)]
 
 @app.middleware("http")
 async def clear_current_user(request: Request, call_next):
-    token = auth.set_current_user_id(None)
+    token = auth.bind_actor()
     try:
         return await call_next(request)
     finally:

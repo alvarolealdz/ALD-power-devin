@@ -19,30 +19,59 @@ from foundation.config import CURRENT_USER_COOKIE
 from foundation.db import session_scope
 from foundation.models import User
 
-_current_user_id: ContextVar[int | None] = ContextVar("current_user_id", default=None)
+
+class _Actor:
+    """A mutable slot holding the current user id.
+
+    The indirection is load-bearing. FastAPI runs dependencies and synchronous
+    endpoints in worker threads, each with its own *copy* of the context, so a
+    plain ``ContextVar.set`` inside a dependency is invisible to the endpoint
+    that follows it. The slot object is shared by every copy, so writing to its
+    attribute is seen everywhere the request reaches.
+    """
+
+    __slots__ = ("user_id",)
+
+    def __init__(self, user_id: int | None = None) -> None:
+        self.user_id = user_id
 
 
-def set_current_user_id(user_id: int | None) -> object:
-    return _current_user_id.set(user_id)
+_current_actor: ContextVar[_Actor | None] = ContextVar("current_actor", default=None)
 
 
-def reset_current_user_id(token: object) -> None:
-    _current_user_id.reset(token)  # type: ignore[arg-type]
+def bind_actor(user_id: int | None = None) -> object:
+    """Install a fresh actor slot. Call once per request, before dependencies run."""
+    return _current_actor.set(_Actor(user_id))
+
+
+def set_current_user_id(user_id: int | None) -> object | None:
+    """Fill the slot bound for this request, or bind one if there is none."""
+    slot = _current_actor.get()
+    if slot is None:
+        return bind_actor(user_id)
+    slot.user_id = user_id
+    return None
+
+
+def reset_current_user_id(token: object | None) -> None:
+    if token is not None:
+        _current_actor.reset(token)  # type: ignore[arg-type]
 
 
 def current_user_id() -> int | None:
-    return _current_user_id.get()
+    slot = _current_actor.get()
+    return slot.user_id if slot else None
 
 
 @contextmanager
 def acting_as(user: User | int) -> Iterator[None]:
     """Bind the current user for a block of non-request code (CLI, jobs, tests)."""
     user_id = user.id if isinstance(user, User) else user
-    token = _current_user_id.set(user_id)
+    token = bind_actor(user_id)
     try:
         yield
     finally:
-        _current_user_id.reset(token)
+        reset_current_user_id(token)
 
 
 def list_users(session: Session) -> list[User]:
