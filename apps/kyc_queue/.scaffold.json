@@ -2,10 +2,11 @@
   "app": "kyc_queue",
   "files": {
     "apps/kyc_queue/__init__.py": "c64bdf6a38a985e83e7f10fcffca934f937c593ab6a83253a1a8693e7d4941aa",
-    "apps/kyc_queue/model.py": "11d3e2d07d7348ce42211b3b4a8ac00fd98635871ac69ee5edd39656fd420264",
-    "apps/kyc_queue/routes.py": "74718099fdd71721dc0cebdaa3eb97f4cb4499a8c42d21fe1a85e08c52bf7129",
-    "apps/kyc_queue/templates/form.html": "2d718070a972c145f1b7bd1746705a8ca712f51b2e14107e42df5c9c5f01c2cc",
-    "apps/kyc_queue/templates/list.html": "882c6e24be0599b806ba9ce64d02d559efc7ff1aed090bf400f4d2a375e7d8d3",
+    "apps/kyc_queue/model.py": "3fa758fbc3dc6d33c67e0c505614fec778fead4f51669f42aed2ea8d26dfe0ea",
+    "apps/kyc_queue/routes.py": "cb754ca3a2988dceeab6b2f80e2321dbbc50219eb9c3b6bc1e1b35aa2ca50395",
+    "apps/kyc_queue/templates/detail.html": "320b3adb63d86f2b018990056adcbbe27898221c5e7389232a17b0b0e2328577",
+    "apps/kyc_queue/templates/form.html": "97f211290293644efc11a587ab0ad1fb62ad0288958b388fc729e9af30fc8bd7",
+    "apps/kyc_queue/templates/list.html": "a6157aae4af4adfe0366f9c8566fd75fce9b23de7e1a01a73bcf80bdb18a7d9b",
     "migrations/versions/13ebb4e4e9ca_create_kyc_queue.py": "81c691ef307ca86388a2bc316819e9e3f71386b10a3a7a7f9df83bddbe01fd07"
   },
   "spec": "specs/kyc_queue.yaml"

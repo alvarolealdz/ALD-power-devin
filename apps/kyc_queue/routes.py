@@ -12,13 +12,15 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.kyc_queue.model import STATUS_OPTIONS, KycReview
+from apps.kyc_queue.model import STATUS_OPTIONS, STATUS_TONES, KycReview
 from foundation import audit, auth, forms
 from foundation.deps import CurrentUser, DbSession
 from foundation.models import User
 from foundation.templating import templates
 
 TITLE = "KYC review queue"
+DESCRIPTION = "Customer due-diligence cases waiting for a reviewer's decision."
+MODEL = KycReview
 
 router = APIRouter(prefix="/kyc-queue", tags=["kyc_queue"])
 
@@ -32,23 +34,33 @@ def _get(session: Session, kyc_review_id: int) -> KycReview:
 
 def _columns(admin: bool) -> list[dict[str, str]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
-    columns = [{"key": "id", "label": "ID"}]
-    columns.append({"key": "risk_score", "label": "Risk score"})
-    columns.append({"key": "status", "label": "Status"})
-    columns.append({"key": "submitted_on", "label": "Submitted on"})
-    columns.append({"key": "reviewer", "label": "Reviewer"})
-    columns.append({"key": "notes", "label": "Notes"})
+    columns = []
+    columns.append({"key": "risk_score", "label": "Risk score", "kind": "link"})
+    columns.append({"key": "status", "label": "Status", "kind": "badge"})
+    columns.append({"key": "submitted_on", "label": "Submitted on", "kind": "date"})
+    columns.append({"key": "reviewer", "label": "Reviewer", "kind": "text"})
+    columns.append({"key": "notes", "label": "Notes", "kind": "text"})
     if admin:
-        columns.append({"key": "customer_name", "label": "Customer name"})
-        columns.append({"key": "customer_ref", "label": "Customer ref"})
+        columns.append({"key": "customer_name", "label": "Customer name", "kind": "text"})
+        columns.append({"key": "customer_ref", "label": "Customer ref", "kind": "text"})
+    columns.append({"key": "id", "label": "ID", "kind": "id"})
     return columns
 
 
 def _row(request: Request, row: KycReview, admin: bool) -> dict[str, object]:
     data: dict[str, object] = {
-        "id": row.id,
-        "risk_score": forms.display(row.risk_score),
-        "status": forms.display(row.status),
+        "risk_score": {
+            "label": forms.display(row.risk_score),
+            "href": str(request.url_for("kyc_queue_detail", kyc_review_id=row.id)),
+        },
+        "status": (
+            None
+            if row.status is None
+            else {
+                "label": forms.display(row.status),
+                "tone": STATUS_TONES.get(row.status, "neutral"),
+            }
+        ),
         "submitted_on": forms.display(row.submitted_on),
         "reviewer": forms.display(row.reviewer.display_name if row.reviewer else None),
         "notes": forms.display(row.notes),
@@ -58,6 +70,38 @@ def _row(request: Request, row: KycReview, admin: bool) -> dict[str, object]:
         data["customer_name"] = forms.display(row.customer_name)
         data["customer_ref"] = forms.display(row.customer_ref)
     return data
+
+
+def _items(row: KycReview, admin: bool) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = [
+        {"label": "Risk score", "value": forms.display(row.risk_score)},
+        {
+            "label": "Status",
+            "value": (
+                None
+                if row.status is None
+                else {
+                    "label": forms.display(row.status),
+                    "tone": STATUS_TONES.get(row.status, "neutral"),
+                }
+            ),
+            "kind": "badge",
+        },
+        {"label": "Submitted on", "value": forms.display(row.submitted_on)},
+        {
+            "label": "Reviewer",
+            "value": forms.display(row.reviewer.display_name if row.reviewer else None),
+        },
+        {"label": "Notes", "value": forms.display(row.notes)},
+    ]
+    if admin:
+        items.extend(
+            [
+                {"label": "Customer name", "value": forms.display(row.customer_name)},
+                {"label": "Customer ref", "value": forms.display(row.customer_ref)},
+            ]
+        )
+    return items
 
 
 def _fields(session: Session, values: dict[str, object], admin: bool) -> list[dict[str, object]]:
@@ -188,6 +232,7 @@ def _form_page(
     heading: str,
     writable: bool = True,
     delete_url: str | None = None,
+    detail_url: str | None = None,
     status_code: int = 200,
 ):
     return templates.TemplateResponse(
@@ -202,6 +247,7 @@ def _form_page(
             "submit_label": "Save" if writable else None,
             "list_url": str(request.url_for("kyc_queue_list")),
             "delete_url": delete_url if writable else None,
+            "detail_url": detail_url,
         },
         status_code=status_code,
     )
@@ -211,6 +257,7 @@ def _form_page(
 def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
     admin = auth.is_admin(current_user)
     rows = session.scalars(select(KycReview).order_by(KycReview.id.desc())).all()
+    new_url = str(request.url_for("kyc_queue_new")) if auth.is_admin(current_user) else None
     return templates.TemplateResponse(
         request,
         "kyc_queue/list.html",
@@ -219,10 +266,13 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "columns": _columns(admin),
             "rows": [_row(request, row, admin) for row in rows],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
-            "empty": "No kyc review queue yet.",
-            "new_url": (
-                str(request.url_for("kyc_queue_new")) if auth.is_admin(current_user) else None
-            ),
+            "description": DESCRIPTION,
+            "empty": {
+                "title": "No kyc review queue yet",
+                "text": DESCRIPTION or None,
+                "cta": {"label": "New kyc review", "href": new_url} if new_url else None,
+            },
+            "new_url": new_url,
         },
     )
 
@@ -283,10 +333,70 @@ def create_row(
         )
     row = KycReview(**values)
     audit.insert(session, row)
-    return RedirectResponse(request.url_for("kyc_queue_list"), status_code=303)
+    return RedirectResponse(
+        request.url_for("kyc_queue_detail", kyc_review_id=row.id), status_code=303
+    )
 
 
-@router.get("/{kyc_review_id}", name="kyc_queue_edit")
+@router.get("/{kyc_review_id}", name="kyc_queue_detail")
+def detail_row(request: Request, session: DbSession, current_user: CurrentUser, kyc_review_id: int):
+    row = _get(session, kyc_review_id)
+    admin = auth.is_admin(current_user)
+    current_value = row.status
+    current = {
+        "label": current_value,
+        "tone": STATUS_TONES.get(current_value, "neutral"),
+    }
+    decisions = [
+        {"label": option.title(), "value": option, "tone": STATUS_TONES.get(option, "neutral")}
+        for option in STATUS_OPTIONS
+        if option != current_value
+    ]
+    return templates.TemplateResponse(
+        request,
+        "kyc_queue/detail.html",
+        {
+            "title": f"Kyc review {row.id}",
+            "row_id": row.id,
+            "items": _items(row, admin),
+            "list_url": str(request.url_for("kyc_queue_list")),
+            "edit_url": (
+                str(request.url_for("kyc_queue_edit", kyc_review_id=row.id))
+                if auth.can_write(current_user)
+                else None
+            ),
+            "delete_url": (
+                str(request.url_for("kyc_queue_delete", kyc_review_id=row.id))
+                if auth.can_write(current_user)
+                else None
+            ),
+            "current": current,
+            "decisions": decisions,
+            "decision_url": str(request.url_for("kyc_queue_decide", kyc_review_id=row.id)),
+            "can_decide": auth.can_write(current_user),
+        },
+    )
+
+
+@router.post("/{kyc_review_id}/status", name="kyc_queue_decide")
+def decide_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    kyc_review_id: int,
+    status: Annotated[str, Form()] = "",
+):
+    auth.require_write(current_user)
+    row = _get(session, kyc_review_id)
+    if status not in STATUS_OPTIONS:
+        raise HTTPException(status_code=400, detail="invalid status")
+    audit.update(session, row, {"status": status})
+    return RedirectResponse(
+        request.url_for("kyc_queue_detail", kyc_review_id=row.id), status_code=303
+    )
+
+
+@router.get("/{kyc_review_id}/edit", name="kyc_queue_edit")
 def edit_row(request: Request, session: DbSession, current_user: CurrentUser, kyc_review_id: int):
     admin = auth.is_admin(current_user)
     row = _get(session, kyc_review_id)
@@ -306,9 +416,10 @@ def edit_row(request: Request, session: DbSession, current_user: CurrentUser, ky
         {},
         admin,
         action=str(request.url_for("kyc_queue_update", kyc_review_id=row.id)),
-        heading=f"Kyc review {row.id}",
+        heading=f"Edit Kyc review {row.id}",
         writable=auth.can_write(current_user),
         delete_url=str(request.url_for("kyc_queue_delete", kyc_review_id=row.id)),
+        detail_url=str(request.url_for("kyc_queue_detail", kyc_review_id=row.id)),
     )
 
 
@@ -350,12 +461,15 @@ def update_row(
             errors,
             admin,
             action=str(request.url_for("kyc_queue_update", kyc_review_id=row.id)),
-            heading=f"Kyc review {row.id}",
+            heading=f"Edit Kyc review {row.id}",
             delete_url=str(request.url_for("kyc_queue_delete", kyc_review_id=row.id)),
+            detail_url=str(request.url_for("kyc_queue_detail", kyc_review_id=row.id)),
             status_code=400,
         )
     audit.update(session, row, values)
-    return RedirectResponse(request.url_for("kyc_queue_list"), status_code=303)
+    return RedirectResponse(
+        request.url_for("kyc_queue_detail", kyc_review_id=row.id), status_code=303
+    )
 
 
 @router.post("/{kyc_review_id}/delete", name="kyc_queue_delete")

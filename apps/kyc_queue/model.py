@@ -20,6 +20,12 @@ STATUS_OPTIONS = (
     "rejected",
     "escalated",
 )
+STATUS_TONES = {
+    "pending": "warning",
+    "approved": "success",
+    "rejected": "danger",
+    "escalated": "info",
+}
 SENSITIVE_FIELDS = (
     "customer_name",
     "customer_ref",
@@ -30,6 +36,7 @@ class KycReview(Base):
     """KYC review queue. Generated once, yours from here on."""
 
     __tablename__ = "kyc_review"
+    __sensitive__ = SENSITIVE_FIELDS
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'approved', 'rejected', 'escalated')",

@@ -11,13 +11,15 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.widgets.model import STATUS_OPTIONS, Widget
+from apps.widgets.model import STATUS_OPTIONS, STATUS_TONES, Widget
 from foundation import audit, auth, forms
 from foundation.deps import CurrentUser, DbSession
 from foundation.models import User
 from foundation.templating import templates
 
 TITLE = "Widgets"
+DESCRIPTION = "Example app generated from a neutral spec."
+MODEL = Widget
 
 router = APIRouter(prefix="/widgets", tags=["widgets"])
 
@@ -31,32 +33,71 @@ def _get(session: Session, widget_id: int) -> Widget:
 
 def _columns(admin: bool) -> list[dict[str, str]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
-    columns = [{"key": "id", "label": "ID"}]
-    columns.append({"key": "label", "label": "Label"})
-    columns.append({"key": "quantity", "label": "Quantity"})
-    columns.append({"key": "due_on", "label": "Due on"})
-    columns.append({"key": "active", "label": "Active"})
-    columns.append({"key": "status", "label": "Status"})
-    columns.append({"key": "owner", "label": "Owner"})
+    columns = []
+    columns.append({"key": "label", "label": "Label", "kind": "link"})
+    columns.append({"key": "quantity", "label": "Quantity", "kind": "number"})
+    columns.append({"key": "due_on", "label": "Due on", "kind": "date"})
+    columns.append({"key": "active", "label": "Active", "kind": "text"})
+    columns.append({"key": "status", "label": "Status", "kind": "badge"})
+    columns.append({"key": "owner", "label": "Owner", "kind": "text"})
     if admin:
-        columns.append({"key": "internal_note", "label": "Internal note"})
+        columns.append({"key": "internal_note", "label": "Internal note", "kind": "text"})
+    columns.append({"key": "id", "label": "ID", "kind": "id"})
     return columns
 
 
 def _row(request: Request, row: Widget, admin: bool) -> dict[str, object]:
     data: dict[str, object] = {
-        "id": row.id,
-        "label": forms.display(row.label),
+        "label": {
+            "label": forms.display(row.label),
+            "href": str(request.url_for("widgets_detail", widget_id=row.id)),
+        },
         "quantity": forms.display(row.quantity),
         "due_on": forms.display(row.due_on),
         "active": forms.display(row.active),
-        "status": forms.display(row.status),
+        "status": (
+            None
+            if row.status is None
+            else {
+                "label": forms.display(row.status),
+                "tone": STATUS_TONES.get(row.status, "neutral"),
+            }
+        ),
         "owner": forms.display(row.owner.display_name if row.owner else None),
         "edit_url": str(request.url_for("widgets_edit", widget_id=row.id)),
     }
     if admin:
         data["internal_note"] = forms.display(row.internal_note)
     return data
+
+
+def _items(row: Widget, admin: bool) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = [
+        {"label": "Label", "value": forms.display(row.label)},
+        {"label": "Quantity", "value": forms.display(row.quantity)},
+        {"label": "Due on", "value": forms.display(row.due_on)},
+        {"label": "Active", "value": forms.display(row.active)},
+        {
+            "label": "Status",
+            "value": (
+                None
+                if row.status is None
+                else {
+                    "label": forms.display(row.status),
+                    "tone": STATUS_TONES.get(row.status, "neutral"),
+                }
+            ),
+            "kind": "badge",
+        },
+        {"label": "Owner", "value": forms.display(row.owner.display_name if row.owner else None)},
+    ]
+    if admin:
+        items.extend(
+            [
+                {"label": "Internal note", "value": forms.display(row.internal_note)},
+            ]
+        )
+    return items
 
 
 def _fields(session: Session, values: dict[str, object], admin: bool) -> list[dict[str, object]]:
@@ -168,6 +209,7 @@ def _form_page(
     heading: str,
     writable: bool = True,
     delete_url: str | None = None,
+    detail_url: str | None = None,
     status_code: int = 200,
 ):
     return templates.TemplateResponse(
@@ -182,6 +224,7 @@ def _form_page(
             "submit_label": "Save" if writable else None,
             "list_url": str(request.url_for("widgets_list")),
             "delete_url": delete_url if writable else None,
+            "detail_url": detail_url,
         },
         status_code=status_code,
     )
@@ -191,6 +234,7 @@ def _form_page(
 def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
     admin = auth.is_admin(current_user)
     rows = session.scalars(select(Widget).order_by(Widget.id.desc())).all()
+    new_url = str(request.url_for("widgets_new")) if auth.can_write(current_user) else None
     return templates.TemplateResponse(
         request,
         "widgets/list.html",
@@ -199,10 +243,13 @@ def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
             "columns": _columns(admin),
             "rows": [_row(request, row, admin) for row in rows],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
-            "empty": "No widgets yet.",
-            "new_url": (
-                str(request.url_for("widgets_new")) if auth.can_write(current_user) else None
-            ),
+            "description": DESCRIPTION,
+            "empty": {
+                "title": "No widgets yet",
+                "text": DESCRIPTION or None,
+                "cta": {"label": "New widget", "href": new_url} if new_url else None,
+            },
+            "new_url": new_url,
         },
     )
 
@@ -263,10 +310,66 @@ def create_row(
         )
     row = Widget(**values)
     audit.insert(session, row)
-    return RedirectResponse(request.url_for("widgets_list"), status_code=303)
+    return RedirectResponse(request.url_for("widgets_detail", widget_id=row.id), status_code=303)
 
 
-@router.get("/{widget_id}", name="widgets_edit")
+@router.get("/{widget_id}", name="widgets_detail")
+def detail_row(request: Request, session: DbSession, current_user: CurrentUser, widget_id: int):
+    row = _get(session, widget_id)
+    admin = auth.is_admin(current_user)
+    current_value = row.status
+    current = {
+        "label": current_value,
+        "tone": STATUS_TONES.get(current_value, "neutral"),
+    }
+    decisions = [
+        {"label": option.title(), "value": option, "tone": STATUS_TONES.get(option, "neutral")}
+        for option in STATUS_OPTIONS
+        if option != current_value
+    ]
+    return templates.TemplateResponse(
+        request,
+        "widgets/detail.html",
+        {
+            "title": f"Widget {row.id}",
+            "row_id": row.id,
+            "items": _items(row, admin),
+            "list_url": str(request.url_for("widgets_list")),
+            "edit_url": (
+                str(request.url_for("widgets_edit", widget_id=row.id))
+                if auth.can_write(current_user)
+                else None
+            ),
+            "delete_url": (
+                str(request.url_for("widgets_delete", widget_id=row.id))
+                if auth.can_write(current_user)
+                else None
+            ),
+            "current": current,
+            "decisions": decisions,
+            "decision_url": str(request.url_for("widgets_decide", widget_id=row.id)),
+            "can_decide": auth.can_write(current_user),
+        },
+    )
+
+
+@router.post("/{widget_id}/status", name="widgets_decide")
+def decide_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    widget_id: int,
+    status: Annotated[str, Form()] = "",
+):
+    auth.require_write(current_user)
+    row = _get(session, widget_id)
+    if status not in STATUS_OPTIONS:
+        raise HTTPException(status_code=400, detail="invalid status")
+    audit.update(session, row, {"status": status})
+    return RedirectResponse(request.url_for("widgets_detail", widget_id=row.id), status_code=303)
+
+
+@router.get("/{widget_id}/edit", name="widgets_edit")
 def edit_row(request: Request, session: DbSession, current_user: CurrentUser, widget_id: int):
     admin = auth.is_admin(current_user)
     row = _get(session, widget_id)
@@ -286,9 +389,10 @@ def edit_row(request: Request, session: DbSession, current_user: CurrentUser, wi
         {},
         admin,
         action=str(request.url_for("widgets_update", widget_id=row.id)),
-        heading=f"Widget {row.id}",
+        heading=f"Edit Widget {row.id}",
         writable=auth.can_write(current_user),
         delete_url=str(request.url_for("widgets_delete", widget_id=row.id)),
+        detail_url=str(request.url_for("widgets_detail", widget_id=row.id)),
     )
 
 
@@ -330,12 +434,13 @@ def update_row(
             errors,
             admin,
             action=str(request.url_for("widgets_update", widget_id=row.id)),
-            heading=f"Widget {row.id}",
+            heading=f"Edit Widget {row.id}",
             delete_url=str(request.url_for("widgets_delete", widget_id=row.id)),
+            detail_url=str(request.url_for("widgets_detail", widget_id=row.id)),
             status_code=400,
         )
     audit.update(session, row, values)
-    return RedirectResponse(request.url_for("widgets_list"), status_code=303)
+    return RedirectResponse(request.url_for("widgets_detail", widget_id=row.id), status_code=303)
 
 
 @router.post("/{widget_id}/delete", name="widgets_delete")

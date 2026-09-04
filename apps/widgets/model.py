@@ -27,6 +27,7 @@ STATUS_OPTIONS = (
     "review",
     "done",
 )
+STATUS_TONES = {"draft": "neutral", "review": "warning", "done": "success"}
 SENSITIVE_FIELDS = ("internal_note",)
 
 
@@ -34,6 +35,7 @@ class Widget(Base):
     """Widgets. Generated once, yours from here on."""
 
     __tablename__ = "widget"
+    __sensitive__ = SENSITIVE_FIELDS
     __table_args__ = (
         CheckConstraint(
             "status IS NULL OR status IN ('draft', 'review', 'done')", name="ck_widget_status"
