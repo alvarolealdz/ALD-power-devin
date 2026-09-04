@@ -114,20 +114,27 @@ structured logging, and whatever the company already uses for secrets,
 backups and observability. One to two days for someone who has done it
 before; none of it touches `apps/`.
 
-### Concurrent decisions are guarded; concurrent edits are not
+### Two reviewers can both approve the same case, if they do it at the same instant
 
-**What.** Two reviewers open the same case. Both click Approve. The second
-gets a 409 ("already moved by someone else") — the decision form posts the
-state it was rendered with and the server compares. That catches a page left
-open for minutes. It does not catch two submits inside the same few
-milliseconds, where both requests read `pending` before either writes: both
-succeed, the audit shows two `pending → approved` entries, the second one
-recording a `before` state that was already stale. The generic **edit form**
+**What.** Two reviewers open the same pending case and both click Approve.
+Normally the first wins and the second gets a 409 ("already moved by someone
+else") and is sent back to the queue: the decision form posts the state it
+was rendered with (`expected=pending`) and `decide_row` compares it to the
+row before writing. That closes the realistic case, a page left open for
+minutes while a colleague decides.
+
+It does **not** close the race. If both POSTs arrive within the same few
+milliseconds, both handlers read `pending` before either writes, both
+comparisons pass, both writes succeed, and the audit log shows two
+`pending → approved` entries by two actors — the second recording a `before`
+that was already stale. No error is raised anywhere. The generic **edit form**
 has no guard at all: two people saving the same record means the second save
 wins field by field.
 
 **Why.** The check is read-then-compare in Python, not a conditional write.
-SQLite serialises writers so the window is tiny, but it exists.
+Nothing tells the database "only if still pending". SQLite serialises
+writers so the window is a few milliseconds, but it exists, and on
+PostgreSQL with real concurrency it widens.
 
 **Closing it.** A `version` column on every generated model, incremented by
 `audit.update`, and `UPDATE ... WHERE id = :id AND version = :seen` with a
