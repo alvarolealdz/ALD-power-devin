@@ -614,11 +614,15 @@ button:disabled,
 
 .row-actions {
   text-align: right;
-  white-space: nowrap;
 }
 
-.row-actions > * + * {
-  margin-left: 4px;
+.row-actions .actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 240px;
+  margin-left: auto;
 }
 
 .row-actions .btn {

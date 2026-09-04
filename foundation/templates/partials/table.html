@@ -60,6 +60,7 @@
           {% endfor %}
           {% if actions %}
             <td class="row-actions">
+              <div class="actions">
               {% for decision in row.decisions|default([]) %}
                 <form method="post" action="{{ decision.action }}" class="inline">
                   <input type="hidden" name="expected" value="{{ decision.expected }}">
@@ -71,6 +72,7 @@
                 {% set href = row[action.href_key] if row is mapping else row|attr(action.href_key) %}
                 <a class="btn btn-ghost btn-sm" href="{{ href }}">{{ action.label }}</a>
               {% endfor %}
+              </div>
             </td>
           {% endif %}
         </tr>
