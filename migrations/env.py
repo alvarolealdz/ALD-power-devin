@@ -3,9 +3,12 @@ from logging.config import fileConfig
 from alembic import context
 
 import foundation.models  # noqa: F401  registers the foundation tables on Base.metadata
+from foundation import discovery
 from foundation.config import DATABASE_URL
 from foundation.db import Base, make_engine
 from foundation.write_guard import raw_writes_allowed
+
+discovery.import_models()  # whatever sits in apps/ joins Base.metadata too
 
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL)

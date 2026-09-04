@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from foundation.config import CURRENT_USER_COOKIE
 from foundation.db import session_scope
-from foundation.models import User
+from foundation.models import ROLE_ADMIN, User
 
 
 class _Actor:
@@ -74,6 +74,11 @@ def acting_as(user: User | int) -> Iterator[None]:
         reset_current_user_id(token)
 
 
+def is_admin(user: User | None) -> bool:
+    """Whether ``user`` may see sensitive fields. The only role check in here."""
+    return user is not None and user.role.name == ROLE_ADMIN
+
+
 def list_users(session: Session) -> list[User]:
     return list(session.scalars(select(User).order_by(User.display_name)))
 
@@ -92,9 +97,7 @@ def get_db(request: Request) -> Iterator[Session]:
     yield from session_scope()
 
 
-def get_current_user(
-    request: Request, session: Annotated[Session, Depends(get_db)]
-) -> User | None:
+def get_current_user(request: Request, session: Annotated[Session, Depends(get_db)]) -> User | None:
     """Resolve the current user from the cookie, falling back to the first user."""
     raw = request.cookies.get(CURRENT_USER_COOKIE)
     user = None

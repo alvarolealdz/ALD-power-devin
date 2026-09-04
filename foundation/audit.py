@@ -153,7 +153,9 @@ def _column_names(obj: Base) -> set[str]:
 
 
 def _row_state(obj: Base) -> dict[str, Any]:
-    return {attr.key: _jsonable(getattr(obj, attr.key)) for attr in inspect(obj).mapper.column_attrs}
+    return {
+        attr.key: _jsonable(getattr(obj, attr.key)) for attr in inspect(obj).mapper.column_attrs
+    }
 
 
 def _row_id(obj: Base, before: dict[str, Any] | None, after: dict[str, Any] | None) -> Any:

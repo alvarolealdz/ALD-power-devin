@@ -4,8 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from foundation import audit, auth
-from foundation.app import CurrentUser, DbSession, app
+from foundation.app import app
 from foundation.config import CURRENT_USER_COOKIE
+from foundation.deps import CurrentUser, DbSession
 from foundation.models import ROLE_VIEWER, AuditLog, Role, User
 
 

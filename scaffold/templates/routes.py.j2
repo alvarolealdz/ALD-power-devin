@@ -1,0 +1,241 @@
+[[ header ]]
+
+from typing import Annotated
+
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from apps.[[ spec.app ]].model import [[ model_imports ]]
+from foundation import audit, auth, forms
+from foundation.deps import CurrentUser, DbSession
+from foundation.templating import templates
+[% for line in extra_route_imports %]
+[[ line ]]
+[% endfor %]
+
+TITLE = "[[ spec.title ]]"
+
+router = APIRouter(prefix="[[ spec.mount_path ]]", tags=["[[ spec.app ]]"])
+
+
+def _get(session: Session, [[ spec.entity ]]_id: int) -> [[ spec.class_name ]]:
+    row = session.get([[ spec.class_name ]], [[ spec.entity ]]_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="[[ spec.title ]]: no such row")
+    return row
+
+
+def _columns(admin: bool) -> list[dict[str, str]]:
+    """What the list view shows. Sensitive columns never reach a non-admin."""
+    columns = [{"key": "id", "label": "ID"}]
+[% for field in visible_fields %]
+    columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]"})
+[% endfor %]
+[% if spec.sensitive_fields %]
+    if admin:
+[% for field in spec.sensitive_fields %]
+        columns.append({"key": "[[ field.name ]]", "label": "[[ field.label ]]"})
+[% endfor %]
+[% endif %]
+    return columns
+
+
+def _row(request: Request, row: [[ spec.class_name ]], admin: bool) -> dict[str, object]:
+    data: dict[str, object] = {
+        "id": row.id,
+[% for field in visible_fields %]
+        "[[ field.name ]]": forms.display([[ field_display[field.name] ]]),
+[% endfor %]
+        "edit_url": str(request.url_for("[[ spec.app ]]_edit", [[ spec.entity ]]_id=row.id)),
+    }
+[% if spec.sensitive_fields %]
+    if admin:
+[% for field in spec.sensitive_fields %]
+        data["[[ field.name ]]"] = forms.display([[ field_display[field.name] ]])
+[% endfor %]
+[% endif %]
+    return data
+
+
+def _fields(
+    session: Session, values: dict[str, object], admin: bool
+) -> list[dict[str, object]]:
+    """Form fields for the generic partial. Sensitive fields are admin-only."""
+    fields: list[dict[str, object]] = [
+[% for field in visible_fields %]
+        [[ field_form[field.name] ]],
+[% endfor %]
+    ]
+[% if spec.sensitive_fields %]
+    if admin:
+        fields.extend(
+            [
+[% for field in spec.sensitive_fields %]
+                [[ field_form[field.name] ]],
+[% endfor %]
+            ]
+        )
+[% endif %]
+    return fields
+
+
+def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], dict[str, str]]:
+    values: dict[str, object] = {}
+    errors: dict[str, str] = {}
+[% for line in parse_visible %]
+    [[ line ]]
+[% endfor %]
+[% if spec.sensitive_fields %]
+    if admin:
+[% for line in parse_sensitive %]
+        [[ line ]]
+[% endfor %]
+[% endif %]
+    return values, errors
+
+
+def _form_page(
+    request: Request,
+    session: Session,
+    values: dict[str, object],
+    errors: dict[str, str],
+    admin: bool,
+    *,
+    action: str,
+    heading: str,
+    delete_url: str | None = None,
+    status_code: int = 200,
+):
+    return templates.TemplateResponse(
+        request,
+        "[[ spec.app ]]/form.html",
+        {
+            "title": heading,
+            "heading": heading,
+            "action": action,
+            "fields": _fields(session, values, admin),
+            "errors": errors,
+            "submit_label": "Save",
+            "list_url": str(request.url_for("[[ spec.app ]]_list")),
+            "delete_url": delete_url,
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("", name="[[ spec.app ]]_list")
+def list_rows(request: Request, session: DbSession, current_user: CurrentUser):
+    admin = auth.is_admin(current_user)
+    rows = session.scalars(select([[ spec.class_name ]]).order_by([[ spec.class_name ]].id.desc())).all()
+    return templates.TemplateResponse(
+        request,
+        "[[ spec.app ]]/list.html",
+        {
+            "title": TITLE,
+            "columns": _columns(admin),
+            "rows": [_row(request, row, admin) for row in rows],
+            "actions": [{"label": "Edit", "href_key": "edit_url"}],
+            "empty": "No [[ spec.title|lower ]] yet.",
+            "new_url": str(request.url_for("[[ spec.app ]]_new")),
+        },
+    )
+
+
+@router.get("/new", name="[[ spec.app ]]_new")
+def new_row(request: Request, session: DbSession, current_user: CurrentUser):
+    admin = auth.is_admin(current_user)
+    return _form_page(
+        request,
+        session,
+        {},
+        {},
+        admin,
+        action=str(request.url_for("[[ spec.app ]]_create")),
+        heading="New [[ spec.singular_title ]]",
+    )
+
+
+@router.post("", name="[[ spec.app ]]_create")
+def create_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+[% for line in form_params %]
+    [[ line ]]
+[% endfor %]
+):
+    admin = auth.is_admin(current_user)
+    values, errors = _parse([[ submitted_dict ]], admin)
+    if errors:
+        return _form_page(
+            request,
+            session,
+            values,
+            errors,
+            admin,
+            action=str(request.url_for("[[ spec.app ]]_create")),
+            heading="New [[ spec.singular_title ]]",
+            status_code=400,
+        )
+    row = [[ spec.class_name ]](**values)
+    audit.insert(session, row)
+    return RedirectResponse(request.url_for("[[ spec.app ]]_list"), status_code=303)
+
+
+@router.get("/{[[ spec.entity ]]_id}", name="[[ spec.app ]]_edit")
+def edit_row(
+    request: Request, session: DbSession, current_user: CurrentUser, [[ spec.entity ]]_id: int
+):
+    admin = auth.is_admin(current_user)
+    row = _get(session, [[ spec.entity ]]_id)
+    values = {[% for field in spec.fields %]"[[ field.column_name ]]": row.[[ field.column_name ]], [% endfor %]}
+    return _form_page(
+        request,
+        session,
+        values,
+        {},
+        admin,
+        action=str(request.url_for("[[ spec.app ]]_update", [[ spec.entity ]]_id=row.id)),
+        heading="[[ spec.singular_title ]] {}".format(row.id),
+        delete_url=str(request.url_for("[[ spec.app ]]_delete", [[ spec.entity ]]_id=row.id)),
+    )
+
+
+@router.post("/{[[ spec.entity ]]_id}", name="[[ spec.app ]]_update")
+def update_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    [[ spec.entity ]]_id: int,
+[% for line in form_params %]
+    [[ line ]]
+[% endfor %]
+):
+    admin = auth.is_admin(current_user)
+    row = _get(session, [[ spec.entity ]]_id)
+    values, errors = _parse([[ submitted_dict ]], admin)
+    if errors:
+        return _form_page(
+            request,
+            session,
+            values,
+            errors,
+            admin,
+            action=str(request.url_for("[[ spec.app ]]_update", [[ spec.entity ]]_id=row.id)),
+            heading="[[ spec.singular_title ]] {}".format(row.id),
+            delete_url=str(request.url_for("[[ spec.app ]]_delete", [[ spec.entity ]]_id=row.id)),
+            status_code=400,
+        )
+    audit.update(session, row, values)
+    return RedirectResponse(request.url_for("[[ spec.app ]]_list"), status_code=303)
+
+
+@router.post("/{[[ spec.entity ]]_id}/delete", name="[[ spec.app ]]_delete")
+def delete_row(
+    request: Request, session: DbSession, current_user: CurrentUser, [[ spec.entity ]]_id: int
+):
+    row = _get(session, [[ spec.entity ]]_id)
+    audit.delete(session, row)
+    return RedirectResponse(request.url_for("[[ spec.app ]]_list"), status_code=303)

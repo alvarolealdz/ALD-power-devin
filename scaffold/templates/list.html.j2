@@ -1,0 +1,10 @@
+{# [[ header_text ]] #}
+{% extends "layout.html" %}
+
+{% block content %}
+  <div class="toolbar">
+    <h1>[[ spec.title ]]</h1>
+    <a href="{{ new_url }}">New [[ spec.singular_title|lower ]]</a>
+  </div>
+  {% include "partials/table.html" %}
+{% endblock %}
