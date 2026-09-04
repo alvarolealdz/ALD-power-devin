@@ -5,10 +5,11 @@ Edit freely: regenerating keeps any file you have changed.
 """
 
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from apps.feature_flags.model import ENVIRONMENT_OPTIONS, ENVIRONMENT_TONES, FeatureFlag
@@ -21,6 +22,19 @@ TITLE = "Feature flags"
 DESCRIPTION = "Runtime switches per environment, and who last touched them."
 SINGULAR = "feature flag"
 MODEL = FeatureFlag
+_SEARCHABLE = (
+    "flag_key",
+    "description",
+)
+_ADMIN_SEARCHABLE = ()
+_SORTABLE = (
+    "flag_key",
+    "description",
+    "enabled",
+    "environment",
+    "id",
+)
+_ADMIN_SORTABLE = (*_SORTABLE,)
 
 router = APIRouter(prefix="/feature-flags", tags=["feature_flags"])
 
@@ -32,7 +46,15 @@ def _get(session: Session, feature_flag_id: int) -> FeatureFlag:
     return row
 
 
-def _columns(admin: bool) -> list[dict[str, str]]:
+def _columns(
+    request: Request,
+    admin: bool,
+    *,
+    state: str | None,
+    q: str,
+    sort: str,
+    direction: str,
+) -> list[dict[str, object]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
     columns = []
     columns.append(
@@ -55,6 +77,20 @@ def _columns(admin: bool) -> list[dict[str, str]]:
         }
     )
     columns.append({"key": "id", "label": "ID", "kind": "id"})
+    sortable = _ADMIN_SORTABLE if admin else _SORTABLE
+    for column in columns:
+        key = column["key"]
+        if key not in sortable:
+            continue
+        next_direction = "desc" if sort == key and direction == "asc" else "asc"
+        params = {"sort": key, "dir": next_direction}
+        if state is not None:
+            params["state"] = state
+        if q:
+            params["q"] = q
+        column["sort_href"] = f"{request.url.path}?{urlencode(params)}"
+        if sort == key:
+            column["sorted"] = direction
     return columns
 
 
@@ -216,6 +252,7 @@ def _form_page(
     writable: bool = True,
     delete_url: str | None = None,
     detail_url: str | None = None,
+    row_id: int | None = None,
     status_code: int = 200,
 ):
     return templates.TemplateResponse(
@@ -231,6 +268,7 @@ def _form_page(
             "list_url": str(request.url_for("feature_flags_list")),
             "delete_url": delete_url if writable else None,
             "detail_url": detail_url,
+            "row_id": row_id,
         },
         status_code=status_code,
     )
@@ -241,19 +279,50 @@ def list_rows(
     request: Request,
     session: DbSession,
     current_user: CurrentUser,
+    q: str = "",
+    sort: str = "",
+    dir: str = "asc",
 ):
     admin = auth.is_admin(current_user)
-    rows = session.scalars(select(FeatureFlag).order_by(FeatureFlag.id.desc())).all()
+    q = q.strip()
+    searchable = _SEARCHABLE + (_ADMIN_SEARCHABLE if admin else ())
+    sortable = _ADMIN_SORTABLE if admin else _SORTABLE
+    normalized_sort = sort if sort in sortable else ""
+    normalized_dir = dir if dir in {"asc", "desc"} else "asc"
+    query = select(MODEL)
+    if q and searchable:
+        pattern = f"%{q}%"
+        query = query.where(or_(*(getattr(MODEL, column).ilike(pattern) for column in searchable)))
+    state = None
+    if normalized_sort:
+        sort_column = getattr(MODEL, normalized_sort)
+        query = query.order_by(sort_column.asc() if normalized_dir == "asc" else sort_column.desc())
+    else:
+        query = query.order_by(MODEL.id.desc())
+    rows = session.scalars(query).all()
     new_url = str(request.url_for("feature_flags_new")) if auth.can_write(current_user) else None
     return templates.TemplateResponse(
         request,
         "feature_flags/list.html",
         {
             "title": TITLE,
-            "columns": _columns(admin),
+            "columns": _columns(
+                request,
+                admin,
+                state=state,
+                q=q,
+                sort=normalized_sort,
+                direction=normalized_dir,
+            ),
             "rows": [_row(request, row, admin) for row in rows],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
+            "list_url": str(request.url_for("feature_flags_list")),
+            "searchable": bool(_SEARCHABLE or (_ADMIN_SEARCHABLE if admin else ())),
+            "q": q,
+            "sort": normalized_sort,
+            "dir": normalized_dir,
+            "state": state,
             "empty": {
                 "title": "No feature flags yet",
                 "text": DESCRIPTION or None,
@@ -371,6 +440,7 @@ def edit_row(request: Request, session: DbSession, current_user: CurrentUser, fe
         writable=auth.can_write(current_user),
         delete_url=str(request.url_for("feature_flags_delete", feature_flag_id=row.id)),
         detail_url=str(request.url_for("feature_flags_detail", feature_flag_id=row.id)),
+        row_id=row.id,
     )
 
 
@@ -411,6 +481,7 @@ def update_row(
             heading=f"Edit feature flag {row.id}",
             delete_url=str(request.url_for("feature_flags_delete", feature_flag_id=row.id)),
             detail_url=str(request.url_for("feature_flags_detail", feature_flag_id=row.id)),
+            row_id=row.id,
             status_code=400,
         )
     audit.update(session, row, values)

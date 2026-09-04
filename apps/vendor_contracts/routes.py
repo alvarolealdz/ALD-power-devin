@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from apps.vendor_contracts.model import (
@@ -28,6 +28,24 @@ TITLE = "Vendor contracts"
 DESCRIPTION = "Supplier agreements, their renewal dates and who owns them."
 SINGULAR = "vendor contract"
 MODEL = VendorContract
+_SEARCHABLE = (
+    "vendor_name",
+    "contract_ref",
+    "notes",
+)
+_ADMIN_SEARCHABLE = ()
+_SORTABLE = (
+    "vendor_name",
+    "contract_ref",
+    "renewal_date",
+    "status",
+    "notes",
+    "id",
+)
+_ADMIN_SORTABLE = (
+    *_SORTABLE,
+    "annual_value",
+)
 WORKFLOW_FIELD = "status"
 OPEN_STATES = (
     "active",
@@ -48,7 +66,15 @@ def _get(session: Session, vendor_contract_id: int) -> VendorContract:
     return row
 
 
-def _columns(admin: bool) -> list[dict[str, str]]:
+def _columns(
+    request: Request,
+    admin: bool,
+    *,
+    state: str | None,
+    q: str,
+    sort: str,
+    direction: str,
+) -> list[dict[str, object]]:
     """What the list view shows. Sensitive columns never reach a non-admin."""
     columns = []
     columns.append(
@@ -82,6 +108,20 @@ def _columns(admin: bool) -> list[dict[str, str]]:
     )
     columns.append({"key": "notes", "label": "Notes", "kind": ("link" if not columns else "text")})
     columns.append({"key": "id", "label": "ID", "kind": "id"})
+    sortable = _ADMIN_SORTABLE if admin else _SORTABLE
+    for column in columns:
+        key = column["key"]
+        if key not in sortable:
+            continue
+        next_direction = "desc" if sort == key and direction == "asc" else "asc"
+        params = {"sort": key, "dir": next_direction}
+        if state is not None:
+            params["state"] = state
+        if q:
+            params["q"] = q
+        column["sort_href"] = f"{request.url.path}?{urlencode(params)}"
+        if sort == key:
+            column["sorted"] = direction
     return columns
 
 
@@ -207,6 +247,19 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
             "type": "text",
         },
     ]
+    if admin:
+        fields.extend(
+            [
+                {
+                    "name": "annual_value",
+                    "label": "Annual value",
+                    "value": values.get("annual_value"),
+                    "required": False,
+                    "type": "number",
+                    "step": "any",
+                },
+            ]
+        )
     workflow_value = values.get(WORKFLOW_FIELD)
     if workflow_value in STATUS_OPTIONS:
         workflow_options = (
@@ -221,19 +274,6 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
                 field["options"] = [
                     {"value": option, "label": option} for option in workflow_options
                 ]
-    if admin:
-        fields.extend(
-            [
-                {
-                    "name": "annual_value",
-                    "label": "Annual value",
-                    "value": values.get("annual_value"),
-                    "required": False,
-                    "type": "number",
-                    "step": "any",
-                },
-            ]
-        )
     return fields
 
 
@@ -299,6 +339,7 @@ def _form_page(
     writable: bool = True,
     delete_url: str | None = None,
     detail_url: str | None = None,
+    row_id: int | None = None,
     status_code: int = 200,
 ):
     return templates.TemplateResponse(
@@ -314,6 +355,7 @@ def _form_page(
             "list_url": str(request.url_for("vendor_contracts_list")),
             "delete_url": delete_url if writable else None,
             "detail_url": detail_url,
+            "row_id": row_id,
         },
         status_code=status_code,
     )
@@ -325,8 +367,20 @@ def list_rows(
     session: DbSession,
     current_user: CurrentUser,
     state: str = "",
+    q: str = "",
+    sort: str = "",
+    dir: str = "asc",
 ):
     admin = auth.is_admin(current_user)
+    q = q.strip()
+    searchable = _SEARCHABLE + (_ADMIN_SEARCHABLE if admin else ())
+    sortable = _ADMIN_SORTABLE if admin else _SORTABLE
+    normalized_sort = sort if sort in sortable else ""
+    normalized_dir = dir if dir in {"asc", "desc"} else "asc"
+    query = select(MODEL)
+    if q and searchable:
+        pattern = f"%{q}%"
+        query = query.where(or_(*(getattr(MODEL, column).ilike(pattern) for column in searchable)))
     workflow_column = getattr(MODEL, WORKFLOW_FIELD)
     grouped = dict(
         session.execute(select(workflow_column, func.count()).group_by(workflow_column)).all()
@@ -334,15 +388,11 @@ def list_rows(
     open_count = sum(grouped.get(option, 0) for option in OPEN_STATES)
     total = sum(grouped.values())
     if state == "":
-        rows = session.scalars(
-            select(MODEL).where(workflow_column.in_(OPEN_STATES)).order_by(MODEL.id.asc())
-        ).all()
+        query = query.where(workflow_column.in_(OPEN_STATES))
     elif state == "all":
-        rows = session.scalars(select(MODEL).order_by(MODEL.id.desc())).all()
+        pass
     elif state in STATUS_OPTIONS:
-        rows = session.scalars(
-            select(MODEL).where(workflow_column == state).order_by(MODEL.id.desc())
-        ).all()
+        query = query.where(workflow_column == state)
     else:
         raise HTTPException(status_code=400, detail="invalid state")
     list_url = str(request.url_for("vendor_contracts_list"))
@@ -380,16 +430,37 @@ def list_rows(
         and (entry.before or {}).get(WORKFLOW_FIELD) not in STATUS_CLOSED
         and (entry.after or {}).get(WORKFLOW_FIELD) != (entry.before or {}).get(WORKFLOW_FIELD)
     )
+    if normalized_sort:
+        sort_column = getattr(MODEL, normalized_sort)
+        query = query.order_by(sort_column.asc() if normalized_dir == "asc" else sort_column.desc())
+    elif state == "":
+        query = query.order_by(MODEL.id.asc())
+    else:
+        query = query.order_by(MODEL.id.desc())
+    rows = session.scalars(query).all()
     new_url = str(request.url_for("vendor_contracts_new")) if auth.can_write(current_user) else None
     return templates.TemplateResponse(
         request,
         "vendor_contracts/list.html",
         {
             "title": TITLE,
-            "columns": _columns(admin),
+            "columns": _columns(
+                request,
+                admin,
+                state=state,
+                q=q,
+                sort=normalized_sort,
+                direction=normalized_dir,
+            ),
             "rows": [_row(request, row, admin) for row in rows],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
+            "list_url": str(request.url_for("vendor_contracts_list")),
+            "searchable": bool(_SEARCHABLE or (_ADMIN_SEARCHABLE if admin else ())),
+            "q": q,
+            "sort": normalized_sort,
+            "dir": normalized_dir,
+            "state": state,
             "empty": {
                 "title": ("Nothing needs a decision" if state == "" else "No vendor contracts yet"),
                 "text": (
@@ -526,9 +597,18 @@ def decide_row(
     current_user: CurrentUser,
     vendor_contract_id: int,
     status: Annotated[str, Form()] = "",
+    expected: Annotated[str, Form()] = "",
 ):
     auth.require_write(current_user)
     row = _get(session, vendor_contract_id)
+    if expected and expected != row.status:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"this {SINGULAR} was already moved to {row.status} "
+                "by someone else; reload to see it"
+            ),
+        )
     if status not in STATUS_OPTIONS:
         raise HTTPException(status_code=400, detail="invalid status")
     if status not in STATUS_TRANSITIONS.get(
@@ -566,6 +646,7 @@ def edit_row(
         writable=auth.can_write(current_user),
         delete_url=str(request.url_for("vendor_contracts_delete", vendor_contract_id=row.id)),
         detail_url=str(request.url_for("vendor_contracts_detail", vendor_contract_id=row.id)),
+        row_id=row.id,
     )
 
 
@@ -620,6 +701,7 @@ def update_row(
             heading=f"Edit vendor contract {row.id}",
             delete_url=str(request.url_for("vendor_contracts_delete", vendor_contract_id=row.id)),
             detail_url=str(request.url_for("vendor_contracts_detail", vendor_contract_id=row.id)),
+            row_id=row.id,
             status_code=400,
         )
     audit.update(session, row, values)
