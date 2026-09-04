@@ -1,0 +1,39 @@
+app: vendor_contracts
+entity: vendor_contract
+title: Vendor contracts
+singular: vendor contract
+description: Supplier agreements, their renewal dates and who owns them.
+
+fields:
+  - name: vendor_name
+    type: text
+    required: true
+    sample: words
+
+  - name: contract_ref
+    type: text
+    required: true
+    sample: reference
+
+  - name: annual_value
+    type: number
+    sensitive: true
+
+  - name: renewal_date
+    type: date
+
+  - name: owner
+    type: fk
+    target: user
+
+  - name: status
+    type: enum
+    required: true
+    options: [active, expiring, renewed, terminated]
+    workflow: true
+    open: [active, expiring]
+    tones: {active: success, expiring: warning, renewed: info, terminated: danger}
+
+  - name: notes
+    type: text
+    sample: sentence

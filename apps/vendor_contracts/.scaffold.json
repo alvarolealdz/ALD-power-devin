@@ -1,0 +1,13 @@
+{
+  "app": "vendor_contracts",
+  "files": {
+    "apps/vendor_contracts/__init__.py": "df1afbd1041e09e0f67f94830fb70479c3a9332543314a569a532dc3932b2993",
+    "apps/vendor_contracts/model.py": "d2974075c5632746ebe60ecd65d85b794c1b4973e325c4e28701c8f8154898b6",
+    "apps/vendor_contracts/routes.py": "1317ed0c9225e2313ae1c702bb58dda59dca473c74b6d853fe7b75cee69c14f0",
+    "apps/vendor_contracts/templates/detail.html": "295441d0adbbc5d679183fe6c3530218dc6a8e3730b4220cb1cf0cc61472ef9a",
+    "apps/vendor_contracts/templates/form.html": "89e8de3d7ee042351e9f2516431ce6310beeb8d7273441e77a0ea33b897c2f06",
+    "apps/vendor_contracts/templates/list.html": "70a3acc0bdeda137573d52adcc62e3dcd9ab52c580e49de97f2cc2ee9bd798e6",
+    "migrations/versions/65a511914828_create_vendor_contracts.py": "583da804810407a601e0f9661b92e00dc1e4e73d26b5835b177efe42f551b499"
+  },
+  "spec": "specs/vendor_contracts.yaml"
+}
