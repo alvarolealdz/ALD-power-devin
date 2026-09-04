@@ -64,6 +64,53 @@ def test_singular_title_is_parsed_and_overrides_the_default():
     assert spec.singular_title == "A widget"
 
 
+def test_singular_heading_only_uppercases_the_first_character():
+    assert parse({**MINIMAL, "singular": "KYC review"}).singular_heading == "KYC review"
+    assert parse({**MINIMAL, "singular": "refund"}).singular_heading == "Refund"
+
+
+@pytest.mark.parametrize("decimals", [-1, 5, True, "2"])
+def test_number_decimals_are_bounded_integers(decimals):
+    with pytest.raises(SpecError, match="decimals"):
+        parse({**MINIMAL, "fields": [{"name": "amount", "type": "number", "decimals": decimals}]})
+
+
+def test_decimals_are_rejected_on_non_numbers():
+    with pytest.raises(SpecError, match="only applies"):
+        parse({**MINIMAL, "fields": [{"name": "label", "type": "text", "decimals": 2}]})
+
+
+def test_unit_field_must_be_text_or_enum_and_exist():
+    with pytest.raises(SpecError, match="does not exist"):
+        parse(
+            {**MINIMAL, "fields": [{"name": "amount", "type": "number", "unit_field": "currency"}]}
+        )
+    with pytest.raises(SpecError, match="text or enum"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {"name": "amount", "type": "number", "unit_field": "count"},
+                    {"name": "count", "type": "number"},
+                ],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [{"min": 4}, {"max": 9}, {"min": 9, "max": 4}, {"min": "low", "max": 4}],
+)
+def test_number_sample_ranges_are_validated(sample):
+    with pytest.raises(SpecError, match="sample"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [{"name": "amount", "type": "number", "sample": sample}],
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "singular",
     ["x" * 61, "line\nbreak"],
@@ -303,9 +350,11 @@ def test_required_sensitive_fields_make_create_admin_only():
     assert parse(MINIMAL).create_is_admin_only is False
 
 
-def test_a_bool_cannot_be_sensitive():
-    with pytest.raises(SpecError, match="bool cannot be sensitive"):
-        parse({**MINIMAL, "fields": [{"name": "flag", "type": "bool", "sensitive": True}]})
+def test_a_sensitive_bool_is_allowed_for_admin_only_toggles():
+    field = parse(
+        {**MINIMAL, "fields": [{"name": "flag", "type": "bool", "sensitive": True}]}
+    ).fields[0]
+    assert field.sensitive is True
 
 
 def test_a_bool_cannot_be_required():

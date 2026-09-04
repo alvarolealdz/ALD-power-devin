@@ -5,7 +5,6 @@ import importlib
 import random
 import sys
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -108,6 +107,28 @@ WORDS = (
     "open",
     "next",
 )
+COMPANIES = (
+    "Northwind Traders",
+    "Meridian Holdings",
+    "Bluefin Logistics",
+    "Harbor & Vale",
+    "Cedar Grove Works",
+    "Silverline Studio",
+    "Pinecrest Group",
+    "Summit & Field",
+    "Brightwater Labs",
+    "Maple Ridge Co",
+    "Juniper House",
+    "Westward Works",
+    "Lighthouse Collective",
+    "Cobalt & Finch",
+    "Redwood Circle",
+    "Meadowlark Partners",
+    "Stonebridge House",
+    "Clearbrook Systems",
+    "Golden Hour Co",
+    "Willow & Thread",
+)
 
 
 def seed(
@@ -146,12 +167,15 @@ def seed(
 
 def _value(field: Field, index: int, rng: random.Random, session, references, today: date):
     sample = field.sample
+    if isinstance(sample, dict):
+        raw = rng.uniform(float(sample["min"]), float(sample["max"]))
+        return forms.number(str(raw), decimals=field.decimals)
     if isinstance(sample, tuple):
         raw = rng.choice(sample)
         if field.type == TEXT:
             return forms.text(raw)
         if field.type == NUMBER:
-            return forms.number(raw)
+            return forms.number(raw, decimals=field.decimals)
         return forms.day(raw)
     if field.type == TEXT:
         if sample == "person_name":
@@ -162,9 +186,13 @@ def _value(field: Field, index: int, rng: random.Random, session, references, to
             return rng.choice(SENTENCES)
         if sample == "words":
             return " ".join(rng.choice(WORDS) for _ in range(rng.randint(2, 3)))
+        if sample == "slug":
+            return "-".join(rng.choice(WORDS) for _ in range(rng.randint(2, 3)))
+        if sample == "company":
+            return rng.choice(COMPANIES)
         return f"{field.label} {index + 1}"
     if field.type == NUMBER:
-        return Decimal(f"{rng.uniform(0, 100):.1f}")
+        return forms.number(str(rng.uniform(0, 100)), decimals=field.decimals)
     if field.type == DATE:
         return today - timedelta(days=rng.randint(0, 89))
     if field.type == BOOL:

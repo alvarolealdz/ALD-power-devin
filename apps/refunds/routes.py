@@ -53,6 +53,30 @@ STATUS_CLOSED = (
 
 router = APIRouter(prefix="/refunds", tags=["refunds"])
 
+_TOGGLEABLE = ()
+_SENSITIVE_TOGGLEABLE = ()
+
+
+def _next_url(request: Request) -> str:
+    return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+
+def _redirect_next(request: Request, next_url: str) -> RedirectResponse:
+    mount_path = "/refunds"
+    target = (
+        next_url
+        if next_url == mount_path or next_url.startswith(f"{mount_path}?")
+        else str(request.url_for("refunds_list"))
+    )
+    return RedirectResponse(target, status_code=303)
+
+
+def _decision_options(current: str) -> tuple[str, ...]:
+    return STATUS_TRANSITIONS.get(
+        current,
+        tuple(option for option in STATUS_OPTIONS if option != current),
+    )
+
 
 def _get(session: Session, refund_id: int) -> Refund:
     row = session.get(Refund, refund_id)
@@ -91,9 +115,6 @@ def _columns(
         {"key": "amount", "label": "Amount", "kind": ("link" if not columns else "number")}
     )
     columns.append(
-        {"key": "currency", "label": "Currency", "kind": ("link" if not columns else "text")}
-    )
-    columns.append(
         {"key": "reason", "label": "Reason", "kind": ("link" if not columns else "text")}
     )
     columns.append(
@@ -127,11 +148,19 @@ def _columns(
     return columns
 
 
-def _row(request: Request, row: Refund, admin: bool) -> dict[str, object]:
+def _row(
+    request: Request,
+    row: Refund,
+    admin: bool,
+    writable: bool,
+    next_url: str,
+) -> dict[str, object]:
     data: dict[str, object] = {
         "transaction_ref": forms.display(row.transaction_ref),
-        "amount": forms.display(row.amount),
-        "currency": forms.display(row.currency),
+        "amount": forms.display(
+            forms.display_number(row.amount, 2)
+            + (" " + forms.display(row.currency) if row.currency else "")
+        ),
         "reason": forms.display(row.reason),
         "status": (
             None
@@ -169,6 +198,22 @@ def _row(request: Request, row: Refund, admin: bool) -> dict[str, object]:
         }
     ordered["id"] = row.id
     ordered["edit_url"] = str(request.url_for("refunds_edit", refund_id=row.id))
+    ordered["decisions"] = (
+        [
+            {
+                "label": option,
+                "value": option,
+                "tone": STATUS_TONES.get(option, "neutral"),
+                "action": str(request.url_for("refunds_decide", refund_id=row.id)),
+                "field": WORKFLOW_FIELD,
+                "expected": row.status,
+                "next": next_url,
+            }
+            for option in _decision_options(row.status)
+        ]
+        if writable
+        else []
+    )
     return ordered
 
 
@@ -177,8 +222,15 @@ def _items(row: Refund, admin: bool) -> list[dict[str, object]]:
     items.append({"label": "Transaction ref", "value": forms.display(row.transaction_ref)})
     if admin:
         items.append({"label": "Customer ref", "value": forms.display(row.customer_ref)})
-    items.append({"label": "Amount", "value": forms.display(row.amount)})
-    items.append({"label": "Currency", "value": forms.display(row.currency)})
+    items.append(
+        {
+            "label": "Amount",
+            "value": forms.display(
+                forms.display_number(row.amount, 2)
+                + (" " + forms.display(row.currency) if row.currency else "")
+            ),
+        }
+    )
     items.append({"label": "Reason", "value": forms.display(row.reason)})
     items.append(
         {
@@ -217,10 +269,10 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
         {
             "name": "amount",
             "label": "Amount",
-            "value": values.get("amount"),
+            "value": forms.form_number(values.get("amount"), 2),
             "required": True,
             "type": "number",
-            "step": "any",
+            "step": "0.01",
         },
         {
             "name": "currency",
@@ -316,7 +368,9 @@ def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], 
         required=True,
         max_length=255,
     )
-    forms.collect(values, errors, "amount", forms.number, raw.get("amount"), required=True)
+    forms.collect(
+        values, errors, "amount", forms.number, raw.get("amount"), required=True, decimals=2
+    )
     forms.collect(
         values, errors, "currency", forms.text, raw.get("currency"), required=True, max_length=255
     )
@@ -459,6 +513,7 @@ def list_rows(
     else:
         query = query.order_by(MODEL.id.desc())
     rows = session.scalars(query).all()
+    next_url = _next_url(request)
     new_url = str(request.url_for("refunds_new")) if auth.is_admin(current_user) else None
     return templates.TemplateResponse(
         request,
@@ -473,7 +528,9 @@ def list_rows(
                 sort=normalized_sort,
                 direction=normalized_dir,
             ),
-            "rows": [_row(request, row, admin) for row in rows],
+            "rows": [
+                _row(request, row, admin, auth.can_write(current_user), next_url) for row in rows
+            ],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
             "list_url": str(request.url_for("refunds_list")),
@@ -617,6 +674,7 @@ def decide_row(
     refund_id: int,
     status: Annotated[str, Form()] = "",
     expected: Annotated[str, Form()] = "",
+    next: Annotated[str, Form()] = "",
 ):
     auth.require_write(current_user)
     row = _get(session, refund_id)
@@ -636,7 +694,26 @@ def decide_row(
     ):
         raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"status": status})
-    return RedirectResponse(request.url_for("refunds_list"), status_code=303)
+    return _redirect_next(request, next)
+
+
+@router.post("/{refund_id}/toggle/{column}", name="refunds_toggle")
+def toggle_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    refund_id: int,
+    column: str,
+    next: Annotated[str, Form()] = "",
+):
+    if column not in _TOGGLEABLE:
+        raise HTTPException(status_code=404, detail="no such toggle")
+    auth.require_write(current_user)
+    if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin access required")
+    row = _get(session, refund_id)
+    audit.update(session, row, {column: not getattr(row, column)})
+    return _redirect_next(request, next)
 
 
 @router.get("/{refund_id}/edit", name="refunds_edit")

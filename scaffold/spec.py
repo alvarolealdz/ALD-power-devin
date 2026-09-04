@@ -23,12 +23,15 @@ fields:
     sample: sentence
 ```
 
-Anything else is a spec error, raised before a single file is written.
+Anything else is a spec error, raised before a single file is written. Number
+fields use a database ``Numeric(18, 4)`` column; ``decimals`` controls forms
+and display only, so changing it does not create migration churn.
 """
 
 import re
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +63,7 @@ _RESERVED_APP_NAMES = frozenset(
 )
 _FOUNDATION_TABLES = frozenset({"user", "role", "audit_log"})
 _TONES = frozenset({"neutral", "info", "success", "warning", "danger"})
-_SAMPLE_KINDS = frozenset({"person_name", "reference", "sentence", "words"})
+_SAMPLE_KINDS = frozenset({"person_name", "reference", "sentence", "words", "slug", "company"})
 _FIELD_KEYS = frozenset(
     {
         "name",
@@ -75,6 +78,8 @@ _FIELD_KEYS = frozenset(
         "transitions",
         "tones",
         "sample",
+        "decimals",
+        "unit_field",
     }
 )
 _SPEC_KEYS = frozenset({"app", "entity", "title", "description", "singular", "fields"})
@@ -97,7 +102,9 @@ class Field:
     open: tuple[str, ...] = ()
     transitions: dict[str, tuple[str, ...]] = dataclass_field(default_factory=dict)
     tones: tuple[tuple[str, str], ...] = ()
-    sample: str | tuple[str, ...] | None = None
+    sample: str | tuple[str, ...] | dict[str, Decimal] | None = None
+    decimals: int | None = None
+    unit_field: str | None = None
 
     @property
     def column_name(self) -> str:
@@ -171,6 +178,10 @@ class Spec:
     def workflow_field(self) -> Field | None:
         return next((field for field in self.fields if field.workflow), None)
 
+    @property
+    def unit_field_names(self) -> tuple[str, ...]:
+        return tuple(field.unit_field for field in self.fields if field.unit_field)
+
 
 def load(path: str | Path) -> Spec:
     """Read and validate a spec file."""
@@ -202,6 +213,7 @@ def parse(raw: dict[str, Any]) -> Spec:
 
     fields = tuple(_parse_field(item, index) for index, item in enumerate(raw_fields))
     _reject_duplicates(fields)
+    _validate_unit_fields(fields)
     workflow_fields = [field for field in fields if field.workflow]
     if len(workflow_fields) > 1:
         raise SpecError("a spec may have at most one workflow field")
@@ -243,6 +255,8 @@ def _parse_field(raw: Any, index: int) -> Field:
     open_states = _parse_open(raw, where, workflow, options)
     transitions = _parse_transitions(raw, where, workflow, options)
     tones = _parse_tones(raw, where, field_type, options)
+    decimals = _parse_decimals(raw, where, field_type)
+    unit_field = _parse_unit_field(raw, where, field_type)
     sample = _parse_sample(raw, where, field_type)
     required = _flag(raw, "required", where)
     sensitive = _flag(raw, "sensitive", where)
@@ -250,11 +264,6 @@ def _parse_field(raw: Any, index: int) -> Field:
         raise SpecError(
             f"{where}: a bool cannot be required — an unchecked box submits nothing, "
             "so the value would always be allowed to be false"
-        )
-    if sensitive and field_type == BOOL:
-        raise SpecError(
-            f"{where}: a bool cannot be sensitive — an unchecked box and a hidden one "
-            "look the same on submit"
         )
     if workflow and not required:
         raise SpecError(f"{where}: workflow fields must be required")
@@ -272,6 +281,8 @@ def _parse_field(raw: Any, index: int) -> Field:
         transitions=transitions,
         tones=tones,
         sample=sample,
+        decimals=decimals,
+        unit_field=unit_field,
     )
 
 
@@ -390,7 +401,51 @@ def _parse_transitions(
     return parsed
 
 
-def _parse_sample(raw: dict[str, Any], where: str, field_type: str) -> str | tuple[str, ...] | None:
+def _parse_decimals(raw: dict[str, Any], where: str, field_type: str) -> int:
+    decimals = raw.get("decimals")
+    if field_type != NUMBER:
+        if decimals is not None:
+            raise SpecError(f"{where}: decimals only applies to number fields")
+        return None
+    if decimals is None:
+        return 2
+    if isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 4:
+        raise SpecError(f"{where}: decimals must be an integer from 0 to 4")
+    return decimals
+
+
+def _parse_unit_field(raw: dict[str, Any], where: str, field_type: str) -> str | None:
+    unit_field = raw.get("unit_field")
+    if unit_field is None:
+        return None
+    if field_type != NUMBER:
+        raise SpecError(f"{where}: unit_field only applies to number fields")
+    return _identifier(unit_field, f"{where}.unit_field")
+
+
+def _validate_unit_fields(fields: tuple[Field, ...]) -> None:
+    by_name = {field.name: field for field in fields}
+    for field in fields:
+        if field.unit_field is None:
+            continue
+        unit = by_name.get(field.unit_field)
+        if unit is None:
+            raise SpecError(
+                f"fields[{fields.index(field)}]: unit_field {field.unit_field!r} does not exist"
+            )
+        if unit.type not in (TEXT, ENUM):
+            raise SpecError(
+                f"fields[{fields.index(field)}]: unit_field must reference a text or enum field"
+            )
+        if unit.sensitive and not field.sensitive:
+            raise SpecError(
+                f"fields[{fields.index(field)}]: unit_field cannot be sensitive when the number is not"
+            )
+
+
+def _parse_sample(
+    raw: dict[str, Any], where: str, field_type: str
+) -> str | tuple[str, ...] | dict[str, Decimal] | None:
     sample = raw.get("sample")
     if sample is None:
         return None
@@ -400,8 +455,21 @@ def _parse_sample(raw: dict[str, Any], where: str, field_type: str) -> str | tup
         if field_type != TEXT:
             raise SpecError(f"{where}: sample kind {sample!r} only applies to text fields")
         return sample
+    if isinstance(sample, dict):
+        if field_type != NUMBER:
+            raise SpecError(f"{where}: sample ranges only apply to number fields")
+        if set(sample) != {"min", "max"}:
+            raise SpecError(f"{where}: number sample must contain min and max")
+        try:
+            minimum = Decimal(str(sample["min"]))
+            maximum = Decimal(str(sample["max"]))
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise SpecError(f"{where}: number sample min and max must be numeric") from error
+        if not minimum.is_finite() or not maximum.is_finite() or minimum >= maximum:
+            raise SpecError(f"{where}: number sample min must be less than max")
+        return {"min": minimum, "max": maximum}
     if not isinstance(sample, list):
-        raise SpecError(f"{where}: sample must be a kind or a list of strings")
+        raise SpecError(f"{where}: sample must be a kind, range, or list of strings")
     if field_type not in (TEXT, NUMBER, DATE):
         raise SpecError(f"{where}: sample lists only apply to text, number, or date fields")
     if not sample:

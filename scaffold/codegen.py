@@ -194,6 +194,14 @@ def display_expression(field: Field, references: dict[str, Reference]) -> str:
     if field.is_reference:
         label = references[field.name].label_attr
         return f"row.{field.name}.{label} if row.{field.name} else None"
+    if field.type == NUMBER:
+        value = f"forms.display_number(row.{field.name}, {field.decimals})"
+        if field.unit_field:
+            return (
+                f'{value} + (" " + forms.display(row.{field.unit_field}) '
+                f'if row.{field.unit_field} else "")'
+            )
+        return value
     return f"row.{field.name}"
 
 
@@ -209,7 +217,8 @@ def form_field_literal(field: Field, references: dict[str, Reference]) -> str:
         base["type"] = "text"
     elif field.type == NUMBER:
         base["type"] = "number"
-        base["step"] = "any"  # the column takes decimals; the browser defaults to integers
+        base["step"] = "1" if field.decimals == 0 else f"{10**-field.decimals:g}"
+        base["value"] = f"__RAW__forms.form_number(values.get({name!r}), {field.decimals})"
     elif field.type == DATE:
         base["type"] = "date"
     elif field.type == BOOL:
@@ -248,7 +257,10 @@ def parse_line(field: Field) -> str:
             f"{required}, max_length={TEXT_LENGTH})"
         )
     if field.type == NUMBER:
-        return f'forms.collect(values, errors, "{column}", forms.number, {name}{required})'
+        return (
+            f'forms.collect(values, errors, "{column}", forms.number, {name}'
+            f"{required}, decimals={field.decimals})"
+        )
     if field.type == DATE:
         return f'forms.collect(values, errors, "{column}", forms.day, {name}{required})'
     if field.type == BOOL:
@@ -316,12 +328,18 @@ def column_kind(field: Field, *, link: bool = False) -> str:
     return {
         NUMBER: "number",
         DATE: "date",
+        BOOL: "toggle",
         ENUM: "badge",
     }.get(field.type, "text")
 
 
 def row_value_expression(
-    spec: Spec, field: Field, references: dict[str, Reference], *, link: bool = False
+    spec: Spec,
+    field: Field,
+    references: dict[str, Reference],
+    *,
+    link: bool = False,
+    list_view: bool = False,
 ) -> str:
     value = f"forms.display({display_expression(field, references)})"
     if link:
@@ -333,6 +351,19 @@ def row_value_expression(
         return (
             f'(None if row.{field.name} is None else {{"label": {value}, "tone": '
             f'{field.name.upper()}_TONES.get(row.{field.name}, "neutral")}})'
+        )
+    if field.type == BOOL:
+        if list_view:
+            return (
+                f'{{"checked": bool(row.{field.name}), "action": str(request.url_for('
+                f'"{spec.app}_toggle", {spec.entity}_id=row.id, column="{field.name}")), '
+                f'"disabled": not writable, "label": "On" if row.{field.name} else "Off", '
+                f'"next": next_url}}'
+            )
+        return (
+            f'(None if row.{field.name} is None else {{"label": '
+            f'"Yes" if row.{field.name} else "No", "tone": '
+            f'"success" if row.{field.name} else "neutral"}})'
         )
     return value
 

@@ -12,6 +12,7 @@ fields:
 
   - name: quantity
     type: number
+    decimals: 2
 
   - name: due_on
     type: date

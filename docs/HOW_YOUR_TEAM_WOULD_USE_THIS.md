@@ -4,10 +4,11 @@ Someone wants a new internal tool. Here is the whole loop.
 
 ## 1. They write a spec
 
-One YAML file, `specs/<name>.yaml`: the entity, its fields, which are
-required, which are sensitive, and — if there is a queue — which enum field
-drives it, which states are open, which moves are allowed. Copy
-`specs/kyc_queue.yaml` and change the nouns. Ten to forty lines, no code.
+Describe the new tool to Devin in plain English: its entity and fields, which
+are required or sensitive, and — if there is a queue — the workflow states,
+open states, terminal states, and allowed moves. Devin writes
+`specs/<name>.yaml` and `apps/<name>/spec.md`. Hand-writing the YAML remains a
+fallback. Ten to forty lines, no application code.
 
 Then `apps/<name>/spec.md`: the request in plain English, as it was asked. It
 sits next to the generated code so the next reader sees *why* before *what*.
@@ -19,6 +20,10 @@ uv run python scaffold/generate.py specs/<name>.yaml   # app + migration
 uv run alembic upgrade head                            # apply it
 uv run python scaffold/seed.py specs/<name>.yaml --rows 25   # optional demo data
 ```
+
+Number fields can specify `decimals` (0–4) and a `unit_field`; the database
+column remains `Numeric(18, 4)` so display precision does not create migration
+churn. Seed samples include `slug`, `company`, and numeric `{min, max}` ranges.
 
 Restart uvicorn. The app is in the nav, on the home page, in the audit feed.
 Nothing in `foundation/` was edited. If the spec is wrong the generator says

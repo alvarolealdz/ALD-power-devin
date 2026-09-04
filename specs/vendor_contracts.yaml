@@ -8,7 +8,7 @@ fields:
   - name: vendor_name
     type: text
     required: true
-    sample: words
+    sample: company
 
   - name: contract_ref
     type: text
@@ -18,6 +18,8 @@ fields:
   - name: annual_value
     type: number
     sensitive: true
+    decimals: 0
+    sample: {min: 5000, max: 250000}
 
   - name: renewal_date
     type: date
@@ -36,4 +38,12 @@ fields:
 
   - name: notes
     type: text
-    sample: sentence
+    sample:
+      - Auto-renews unless cancelled 60 days prior
+      - Pricing review due at renewal
+      - Insurance certificate is on file
+      - Service levels are reviewed quarterly
+      - Renewal owner should confirm updated terms
+      - Agreement includes a transition assistance clause
+      - Legal review completed before signature
+      - Payment schedule follows the annual anniversary

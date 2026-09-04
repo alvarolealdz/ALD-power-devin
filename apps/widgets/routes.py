@@ -46,6 +46,30 @@ STATUS_CLOSED = ("done",)
 
 router = APIRouter(prefix="/widgets", tags=["widgets"])
 
+_TOGGLEABLE = ("active",)
+_SENSITIVE_TOGGLEABLE = ()
+
+
+def _next_url(request: Request) -> str:
+    return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+
+def _redirect_next(request: Request, next_url: str) -> RedirectResponse:
+    mount_path = "/widgets"
+    target = (
+        next_url
+        if next_url == mount_path or next_url.startswith(f"{mount_path}?")
+        else str(request.url_for("widgets_list"))
+    )
+    return RedirectResponse(target, status_code=303)
+
+
+def _decision_options(current: str) -> tuple[str, ...]:
+    return STATUS_TRANSITIONS.get(
+        current,
+        tuple(option for option in STATUS_OPTIONS if option != current),
+    )
+
 
 def _get(session: Session, widget_id: int) -> Widget:
     row = session.get(Widget, widget_id)
@@ -73,7 +97,7 @@ def _columns(
         {"key": "due_on", "label": "Due on", "kind": ("link" if not columns else "date")}
     )
     columns.append(
-        {"key": "active", "label": "Active", "kind": ("link" if not columns else "text")}
+        {"key": "active", "label": "Active", "kind": ("link" if not columns else "toggle")}
     )
     columns.append(
         {"key": "status", "label": "Status", "kind": ("link" if not columns else "badge")}
@@ -105,12 +129,24 @@ def _columns(
     return columns
 
 
-def _row(request: Request, row: Widget, admin: bool) -> dict[str, object]:
+def _row(
+    request: Request,
+    row: Widget,
+    admin: bool,
+    writable: bool,
+    next_url: str,
+) -> dict[str, object]:
     data: dict[str, object] = {
         "label": forms.display(row.label),
-        "quantity": forms.display(row.quantity),
+        "quantity": forms.display(forms.display_number(row.quantity, 2)),
         "due_on": forms.display(row.due_on),
-        "active": forms.display(row.active),
+        "active": {
+            "checked": bool(row.active),
+            "action": str(request.url_for("widgets_toggle", widget_id=row.id, column="active")),
+            "disabled": not writable,
+            "label": "On" if row.active else "Off",
+            "next": next_url,
+        },
         "status": (
             None
             if row.status is None
@@ -137,15 +173,46 @@ def _row(request: Request, row: Widget, admin: bool) -> dict[str, object]:
         }
     ordered["id"] = row.id
     ordered["edit_url"] = str(request.url_for("widgets_edit", widget_id=row.id))
+    ordered["decisions"] = (
+        [
+            {
+                "label": option,
+                "value": option,
+                "tone": STATUS_TONES.get(option, "neutral"),
+                "action": str(request.url_for("widgets_decide", widget_id=row.id)),
+                "field": WORKFLOW_FIELD,
+                "expected": row.status,
+                "next": next_url,
+            }
+            for option in _decision_options(row.status)
+        ]
+        if writable
+        else []
+    )
     return ordered
 
 
 def _items(row: Widget, admin: bool) -> list[dict[str, object]]:
     items: list[dict[str, object]] = []
     items.append({"label": "Label", "value": forms.display(row.label)})
-    items.append({"label": "Quantity", "value": forms.display(row.quantity)})
+    items.append(
+        {"label": "Quantity", "value": forms.display(forms.display_number(row.quantity, 2))}
+    )
     items.append({"label": "Due on", "value": forms.display(row.due_on)})
-    items.append({"label": "Active", "value": forms.display(row.active)})
+    items.append(
+        {
+            "label": "Active",
+            "value": (
+                None
+                if row.active is None
+                else {
+                    "label": "Yes" if row.active else "No",
+                    "tone": "success" if row.active else "neutral",
+                }
+            ),
+            "kind": "badge",
+        }
+    )
     items.append(
         {
             "label": "Status",
@@ -181,10 +248,10 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
         {
             "name": "quantity",
             "label": "Quantity",
-            "value": values.get("quantity"),
+            "value": forms.form_number(values.get("quantity"), 2),
             "required": False,
             "type": "number",
-            "step": "any",
+            "step": "0.01",
         },
         {
             "name": "due_on",
@@ -267,7 +334,7 @@ def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], 
     forms.collect(
         values, errors, "label", forms.text, raw.get("label"), required=True, max_length=255
     )
-    forms.collect(values, errors, "quantity", forms.number, raw.get("quantity"))
+    forms.collect(values, errors, "quantity", forms.number, raw.get("quantity"), decimals=2)
     forms.collect(values, errors, "due_on", forms.day, raw.get("due_on"))
     values["active"] = forms.boolean(raw.get("active"))
     forms.collect(
@@ -401,6 +468,7 @@ def list_rows(
     else:
         query = query.order_by(MODEL.id.desc())
     rows = session.scalars(query).all()
+    next_url = _next_url(request)
     new_url = str(request.url_for("widgets_new")) if auth.can_write(current_user) else None
     return templates.TemplateResponse(
         request,
@@ -415,7 +483,9 @@ def list_rows(
                 sort=normalized_sort,
                 direction=normalized_dir,
             ),
-            "rows": [_row(request, row, admin) for row in rows],
+            "rows": [
+                _row(request, row, admin, auth.can_write(current_user), next_url) for row in rows
+            ],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
             "list_url": str(request.url_for("widgets_list")),
@@ -555,6 +625,7 @@ def decide_row(
     widget_id: int,
     status: Annotated[str, Form()] = "",
     expected: Annotated[str, Form()] = "",
+    next: Annotated[str, Form()] = "",
 ):
     auth.require_write(current_user)
     row = _get(session, widget_id)
@@ -574,7 +645,26 @@ def decide_row(
     ):
         raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"status": status})
-    return RedirectResponse(request.url_for("widgets_list"), status_code=303)
+    return _redirect_next(request, next)
+
+
+@router.post("/{widget_id}/toggle/{column}", name="widgets_toggle")
+def toggle_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    widget_id: int,
+    column: str,
+    next: Annotated[str, Form()] = "",
+):
+    if column not in _TOGGLEABLE:
+        raise HTTPException(status_code=404, detail="no such toggle")
+    auth.require_write(current_user)
+    if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin access required")
+    row = _get(session, widget_id)
+    audit.update(session, row, {column: not getattr(row, column)})
+    return _redirect_next(request, next)
 
 
 @router.get("/{widget_id}/edit", name="widgets_edit")

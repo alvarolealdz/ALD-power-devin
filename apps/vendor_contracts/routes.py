@@ -58,6 +58,30 @@ STATUS_CLOSED = (
 
 router = APIRouter(prefix="/vendor-contracts", tags=["vendor_contracts"])
 
+_TOGGLEABLE = ()
+_SENSITIVE_TOGGLEABLE = ()
+
+
+def _next_url(request: Request) -> str:
+    return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+
+def _redirect_next(request: Request, next_url: str) -> RedirectResponse:
+    mount_path = "/vendor-contracts"
+    target = (
+        next_url
+        if next_url == mount_path or next_url.startswith(f"{mount_path}?")
+        else str(request.url_for("vendor_contracts_list"))
+    )
+    return RedirectResponse(target, status_code=303)
+
+
+def _decision_options(current: str) -> tuple[str, ...]:
+    return STATUS_TRANSITIONS.get(
+        current,
+        tuple(option for option in STATUS_OPTIONS if option != current),
+    )
+
 
 def _get(session: Session, vendor_contract_id: int) -> VendorContract:
     row = session.get(VendorContract, vendor_contract_id)
@@ -125,7 +149,13 @@ def _columns(
     return columns
 
 
-def _row(request: Request, row: VendorContract, admin: bool) -> dict[str, object]:
+def _row(
+    request: Request,
+    row: VendorContract,
+    admin: bool,
+    writable: bool,
+    next_url: str,
+) -> dict[str, object]:
     data: dict[str, object] = {
         "vendor_name": forms.display(row.vendor_name),
         "contract_ref": forms.display(row.contract_ref),
@@ -142,7 +172,7 @@ def _row(request: Request, row: VendorContract, admin: bool) -> dict[str, object
         "notes": forms.display(row.notes),
     }
     if admin:
-        data["annual_value"] = forms.display(row.annual_value)
+        data["annual_value"] = forms.display(forms.display_number(row.annual_value, 0))
     ordered = {
         key: data[key]
         for key in [
@@ -165,6 +195,24 @@ def _row(request: Request, row: VendorContract, admin: bool) -> dict[str, object
         }
     ordered["id"] = row.id
     ordered["edit_url"] = str(request.url_for("vendor_contracts_edit", vendor_contract_id=row.id))
+    ordered["decisions"] = (
+        [
+            {
+                "label": option,
+                "value": option,
+                "tone": STATUS_TONES.get(option, "neutral"),
+                "action": str(
+                    request.url_for("vendor_contracts_decide", vendor_contract_id=row.id)
+                ),
+                "field": WORKFLOW_FIELD,
+                "expected": row.status,
+                "next": next_url,
+            }
+            for option in _decision_options(row.status)
+        ]
+        if writable
+        else []
+    )
     return ordered
 
 
@@ -173,7 +221,12 @@ def _items(row: VendorContract, admin: bool) -> list[dict[str, object]]:
     items.append({"label": "Vendor name", "value": forms.display(row.vendor_name)})
     items.append({"label": "Contract ref", "value": forms.display(row.contract_ref)})
     if admin:
-        items.append({"label": "Annual value", "value": forms.display(row.annual_value)})
+        items.append(
+            {
+                "label": "Annual value",
+                "value": forms.display(forms.display_number(row.annual_value, 0)),
+            }
+        )
     items.append({"label": "Renewal date", "value": forms.display(row.renewal_date)})
     items.append(
         {"label": "Owner", "value": forms.display(row.owner.display_name if row.owner else None)}
@@ -253,10 +306,10 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
                 {
                     "name": "annual_value",
                     "label": "Annual value",
-                    "value": values.get("annual_value"),
+                    "value": forms.form_number(values.get("annual_value"), 0),
                     "required": False,
                     "type": "number",
-                    "step": "any",
+                    "step": "1",
                 },
             ]
         )
@@ -323,7 +376,9 @@ def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], 
     )
     forms.collect(values, errors, "notes", forms.text, raw.get("notes"), max_length=255)
     if admin:
-        forms.collect(values, errors, "annual_value", forms.number, raw.get("annual_value"))
+        forms.collect(
+            values, errors, "annual_value", forms.number, raw.get("annual_value"), decimals=0
+        )
     return values, errors
 
 
@@ -441,6 +496,7 @@ def list_rows(
     else:
         query = query.order_by(MODEL.id.desc())
     rows = session.scalars(query).all()
+    next_url = _next_url(request)
     new_url = str(request.url_for("vendor_contracts_new")) if auth.can_write(current_user) else None
     return templates.TemplateResponse(
         request,
@@ -455,7 +511,9 @@ def list_rows(
                 sort=normalized_sort,
                 direction=normalized_dir,
             ),
-            "rows": [_row(request, row, admin) for row in rows],
+            "rows": [
+                _row(request, row, admin, auth.can_write(current_user), next_url) for row in rows
+            ],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
             "list_url": str(request.url_for("vendor_contracts_list")),
@@ -601,6 +659,7 @@ def decide_row(
     vendor_contract_id: int,
     status: Annotated[str, Form()] = "",
     expected: Annotated[str, Form()] = "",
+    next: Annotated[str, Form()] = "",
 ):
     auth.require_write(current_user)
     row = _get(session, vendor_contract_id)
@@ -620,7 +679,26 @@ def decide_row(
     ):
         raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"status": status})
-    return RedirectResponse(request.url_for("vendor_contracts_list"), status_code=303)
+    return _redirect_next(request, next)
+
+
+@router.post("/{vendor_contract_id}/toggle/{column}", name="vendor_contracts_toggle")
+def toggle_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    vendor_contract_id: int,
+    column: str,
+    next: Annotated[str, Form()] = "",
+):
+    if column not in _TOGGLEABLE:
+        raise HTTPException(status_code=404, detail="no such toggle")
+    auth.require_write(current_user)
+    if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin access required")
+    row = _get(session, vendor_contract_id)
+    audit.update(session, row, {column: not getattr(row, column)})
+    return _redirect_next(request, next)
 
 
 @router.get("/{vendor_contract_id}/edit", name="vendor_contracts_edit")

@@ -38,6 +38,23 @@ _ADMIN_SORTABLE = (*_SORTABLE,)
 
 router = APIRouter(prefix="/feature-flags", tags=["feature_flags"])
 
+_TOGGLEABLE = ("enabled",)
+_SENSITIVE_TOGGLEABLE = ()
+
+
+def _next_url(request: Request) -> str:
+    return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+
+def _redirect_next(request: Request, next_url: str) -> RedirectResponse:
+    mount_path = "/feature-flags"
+    target = (
+        next_url
+        if next_url == mount_path or next_url.startswith(f"{mount_path}?")
+        else str(request.url_for("feature_flags_list"))
+    )
+    return RedirectResponse(target, status_code=303)
+
 
 def _get(session: Session, feature_flag_id: int) -> FeatureFlag:
     row = session.get(FeatureFlag, feature_flag_id)
@@ -64,7 +81,7 @@ def _columns(
         {"key": "description", "label": "Description", "kind": ("link" if not columns else "text")}
     )
     columns.append(
-        {"key": "enabled", "label": "Enabled", "kind": ("link" if not columns else "text")}
+        {"key": "enabled", "label": "Enabled", "kind": ("link" if not columns else "toggle")}
     )
     columns.append(
         {"key": "environment", "label": "Environment", "kind": ("link" if not columns else "badge")}
@@ -94,11 +111,25 @@ def _columns(
     return columns
 
 
-def _row(request: Request, row: FeatureFlag, admin: bool) -> dict[str, object]:
+def _row(
+    request: Request,
+    row: FeatureFlag,
+    admin: bool,
+    writable: bool,
+    next_url: str,
+) -> dict[str, object]:
     data: dict[str, object] = {
         "flag_key": forms.display(row.flag_key),
         "description": forms.display(row.description),
-        "enabled": forms.display(row.enabled),
+        "enabled": {
+            "checked": bool(row.enabled),
+            "action": str(
+                request.url_for("feature_flags_toggle", feature_flag_id=row.id, column="enabled")
+            ),
+            "disabled": not writable,
+            "label": "On" if row.enabled else "Off",
+            "next": next_url,
+        },
         "environment": (
             None
             if row.environment is None
@@ -125,6 +156,7 @@ def _row(request: Request, row: FeatureFlag, admin: bool) -> dict[str, object]:
         }
     ordered["id"] = row.id
     ordered["edit_url"] = str(request.url_for("feature_flags_edit", feature_flag_id=row.id))
+    ordered["decisions"] = []
     return ordered
 
 
@@ -132,7 +164,20 @@ def _items(row: FeatureFlag, admin: bool) -> list[dict[str, object]]:
     items: list[dict[str, object]] = []
     items.append({"label": "Flag key", "value": forms.display(row.flag_key)})
     items.append({"label": "Description", "value": forms.display(row.description)})
-    items.append({"label": "Enabled", "value": forms.display(row.enabled)})
+    items.append(
+        {
+            "label": "Enabled",
+            "value": (
+                None
+                if row.enabled is None
+                else {
+                    "label": "Yes" if row.enabled else "No",
+                    "tone": "success" if row.enabled else "neutral",
+                }
+            ),
+            "kind": "badge",
+        }
+    )
     items.append(
         {
             "label": "Environment",
@@ -303,6 +348,7 @@ def list_rows(
     else:
         query = query.order_by(MODEL.id.desc())
     rows = session.scalars(query).all()
+    next_url = _next_url(request)
     new_url = str(request.url_for("feature_flags_new")) if auth.can_write(current_user) else None
     return templates.TemplateResponse(
         request,
@@ -317,7 +363,9 @@ def list_rows(
                 sort=normalized_sort,
                 direction=normalized_dir,
             ),
-            "rows": [_row(request, row, admin) for row in rows],
+            "rows": [
+                _row(request, row, admin, auth.can_write(current_user), next_url) for row in rows
+            ],
             "actions": [{"label": "Edit", "href_key": "edit_url"}],
             "description": DESCRIPTION,
             "list_url": str(request.url_for("feature_flags_list")),
@@ -419,6 +467,25 @@ def detail_row(
             ),
         },
     )
+
+
+@router.post("/{feature_flag_id}/toggle/{column}", name="feature_flags_toggle")
+def toggle_row(
+    request: Request,
+    session: DbSession,
+    current_user: CurrentUser,
+    feature_flag_id: int,
+    column: str,
+    next: Annotated[str, Form()] = "",
+):
+    if column not in _TOGGLEABLE:
+        raise HTTPException(status_code=404, detail="no such toggle")
+    auth.require_write(current_user)
+    if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin access required")
+    row = _get(session, feature_flag_id)
+    audit.update(session, row, {column: not getattr(row, column)})
+    return _redirect_next(request, next)
 
 
 @router.get("/{feature_flag_id}/edit", name="feature_flags_edit")

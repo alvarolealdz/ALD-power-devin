@@ -143,7 +143,19 @@ def test_required_sensitive_creation_uses_admin_checks(root, spec_path):
 
     routes = (root / "apps" / "private" / "routes.py").read_text()
     assert routes.count("auth.require_admin(current_user)") == 2
-    assert routes.count("auth.require_write(current_user)") == 2
+    assert routes.count("auth.require_write(current_user)") == 3
+
+
+def test_sensitive_bool_toggle_is_admin_only(root, spec_path):
+    spec_path.write_text(
+        "app: private\nentity: record\nfields:\n"
+        "  - name: label\n    type: text\n"
+        "  - name: enabled\n    type: bool\n    sensitive: true\n"
+    )
+    generate.generate(spec_path, root=root)
+    routes = (root / "apps" / "private" / "routes.py").read_text()
+    assert '_SENSITIVE_TOGGLEABLE = ("enabled",)' in routes
+    assert "if column in _SENSITIVE_TOGGLEABLE and not auth.is_admin(current_user)" in routes
 
 
 def test_renaming_the_entity_is_refused(root, spec_path):
