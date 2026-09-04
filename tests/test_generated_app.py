@@ -272,13 +272,11 @@ def test_required_sensitive_fields_make_creation_admin_only(
         "CUS-001",
         seeded.id,
     )
-    assert (
-        session.scalars(
-            select(AuditLog).where(
-                AuditLog.table_name == "kyc_review", AuditLog.action == AuditLog.ACTION_INSERT
-            )
-        ).one()
-    )
+    assert session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "kyc_review", AuditLog.action == AuditLog.ACTION_INSERT
+        )
+    ).one()
     assert "New kyc review" in client.get("/kyc-queue").text
 
     as_user(client, editor)

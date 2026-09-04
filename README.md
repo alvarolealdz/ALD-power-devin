@@ -9,6 +9,7 @@ base Jinja templates — and `apps/`, generated on top of it by
 ```bash
 uv sync
 uv run python scaffold/generate.py specs/widgets.yaml   # writes apps/widgets/ + a migration
+uv run python scaffold/generate.py specs/kyc_queue.yaml # writes apps/kyc_queue/ + a migration
 uv run alembic upgrade head                             # create the schema
 uv run python -m foundation.seed                        # roles + admin@example.com
 uv run uvicorn foundation.app:app --reload
