@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from apps.kyc_queue.model import STATUS_OPTIONS, STATUS_TONES, KycReview
+from apps.kyc_queue.model import STATUS_OPTIONS, STATUS_TONES, STATUS_TRANSITIONS, KycReview
 from foundation import audit, auth, forms
 from foundation.deps import CurrentUser, DbSession
 from foundation.models import AuditLog, User
@@ -366,6 +366,7 @@ def list_rows(
             )
         )
         if (entry.after or {}).get(WORKFLOW_FIELD) in STATUS_CLOSED
+        and (entry.before or {}).get(WORKFLOW_FIELD) not in STATUS_CLOSED
         and (entry.after or {}).get(WORKFLOW_FIELD) != (entry.before or {}).get(WORKFLOW_FIELD)
     )
     new_url = str(request.url_for("kyc_queue_new")) if auth.is_admin(current_user) else None
@@ -471,7 +472,11 @@ def detail_row(request: Request, session: DbSession, current_user: CurrentUser, 
     decisions = [
         {"label": option.title(), "value": option, "tone": STATUS_TONES.get(option, "neutral")}
         for option in STATUS_OPTIONS
-        if option != current_value
+        if option
+        in STATUS_TRANSITIONS.get(
+            current_value,
+            tuple(option for option in STATUS_OPTIONS if option != current_value),
+        )
     ]
     return templates.TemplateResponse(
         request,
@@ -511,6 +516,11 @@ def decide_row(
     row = _get(session, kyc_review_id)
     if status not in STATUS_OPTIONS:
         raise HTTPException(status_code=400, detail="invalid status")
+    if status not in STATUS_TRANSITIONS.get(
+        row.status,
+        tuple(option for option in STATUS_OPTIONS if option != row.status),
+    ):
+        raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"status": status})
     return RedirectResponse(request.url_for("kyc_queue_list"), status_code=303)
 

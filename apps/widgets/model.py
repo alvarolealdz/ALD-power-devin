@@ -28,6 +28,7 @@ STATUS_OPTIONS = (
     "done",
 )
 STATUS_TONES = {"draft": "neutral", "review": "warning", "done": "success"}
+STATUS_TRANSITIONS = {}
 SENSITIVE_FIELDS = ("internal_note",)
 
 
@@ -37,16 +38,14 @@ class Widget(Base):
     __tablename__ = "widget"
     __sensitive__ = SENSITIVE_FIELDS
     __table_args__ = (
-        CheckConstraint(
-            "status IS NULL OR status IN ('draft', 'review', 'done')", name="ck_widget_status"
-        ),
+        CheckConstraint("status IN ('draft', 'review', 'done')", name="ck_widget_status"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     internal_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)

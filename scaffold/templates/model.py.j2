@@ -5,6 +5,8 @@
 [% for field in enum_fields %]
 [[ field.name|upper ]]_OPTIONS = ([% for option in field.options %]"[[ option ]]", [% endfor %])
 [[ field.name|upper ]]_TONES = [[ tone_maps[field.name] ]]
+[% if field.workflow %][[ field.name|upper ]]_TRANSITIONS = [[ field.transitions ]]
+[% endif %]
 [% endfor %]
 SENSITIVE_FIELDS = ([% for field in spec.sensitive_fields %]"[[ field.column_name ]]", [% endfor %])
 

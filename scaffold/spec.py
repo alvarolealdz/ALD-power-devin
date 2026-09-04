@@ -72,6 +72,7 @@ _FIELD_KEYS = frozenset(
         "target",
         "workflow",
         "open",
+        "transitions",
         "tones",
         "sample",
     }
@@ -94,6 +95,7 @@ class Field:
     target: str | None = None
     workflow: bool = False
     open: tuple[str, ...] = ()
+    transitions: dict[str, tuple[str, ...]] = dataclass_field(default_factory=dict)
     tones: tuple[tuple[str, str], ...] = ()
     sample: str | tuple[str, ...] | None = None
 
@@ -112,6 +114,12 @@ class Field:
     @property
     def closed(self) -> tuple[str, ...]:
         return tuple(option for option in self.options if option not in self.open)
+
+    def allowed_from(self, state: str) -> tuple[str, ...]:
+        configured = self.transitions.get(state)
+        if configured is not None:
+            return configured
+        return tuple(option for option in self.options if option != state)
 
 
 @dataclass(frozen=True)
@@ -227,6 +235,7 @@ def _parse_field(raw: Any, index: int) -> Field:
     if workflow and field_type != ENUM:
         raise SpecError(f"{where}: workflow only applies to enum fields")
     open_states = _parse_open(raw, where, workflow, options)
+    transitions = _parse_transitions(raw, where, workflow, options)
     tones = _parse_tones(raw, where, field_type, options)
     sample = _parse_sample(raw, where, field_type)
     required = _flag(raw, "required", where)
@@ -241,6 +250,8 @@ def _parse_field(raw: Any, index: int) -> Field:
             f"{where}: a bool cannot be sensitive — an unchecked box and a hidden one "
             "look the same on submit"
         )
+    if workflow and not required:
+        raise SpecError(f"{where}: workflow fields must be required")
 
     return Field(
         name=name,
@@ -252,6 +263,7 @@ def _parse_field(raw: Any, index: int) -> Field:
         target=target,
         workflow=workflow,
         open=open_states,
+        transitions=transitions,
         tones=tones,
         sample=sample,
     )
@@ -340,6 +352,36 @@ def _parse_open(
     if len(values) == len(options):
         raise SpecError(f"{where}: open states must leave at least one closed option")
     return values
+
+
+def _parse_transitions(
+    raw: dict[str, Any],
+    where: str,
+    workflow: bool,
+    options: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    if "transitions" not in raw:
+        return {}
+    transitions = raw["transitions"]
+    if not workflow:
+        raise SpecError(f"{where}: transitions only applies to workflow fields")
+    if not isinstance(transitions, dict):
+        raise SpecError(f"{where}: transitions must be a mapping")
+    parsed: dict[str, tuple[str, ...]] = {}
+    for state, targets in transitions.items():
+        if state not in options:
+            raise SpecError(f"{where}: transition state must be one of the enum options")
+        if not isinstance(targets, list):
+            raise SpecError(f"{where}: transition targets must be lists")
+        values = tuple(str(target) for target in targets)
+        if len(set(values)) != len(values):
+            raise SpecError(f"{where}: transition targets cannot contain duplicates")
+        if state in values:
+            raise SpecError(f"{where}: a state cannot transition to itself")
+        if any(target not in options for target in values):
+            raise SpecError(f"{where}: transition target must be one of the enum options")
+        parsed[state] = values
+    return parsed
 
 
 def _parse_sample(raw: dict[str, Any], where: str, field_type: str) -> str | tuple[str, ...] | None:

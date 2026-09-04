@@ -26,6 +26,12 @@ STATUS_TONES = {
     "rejected": "danger",
     "escalated": "info",
 }
+STATUS_TRANSITIONS = {
+    "pending": ("approved", "rejected", "escalated"),
+    "escalated": ("approved", "rejected"),
+    "approved": (),
+    "rejected": (),
+}
 SENSITIVE_FIELDS = (
     "customer_name",
     "customer_ref",

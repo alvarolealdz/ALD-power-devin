@@ -263,6 +263,7 @@ def list_rows(
             )
         )
         if (entry.after or {}).get(WORKFLOW_FIELD) in [[ spec.workflow_field.name|upper ]]_CLOSED
+        and (entry.before or {}).get(WORKFLOW_FIELD) not in [[ spec.workflow_field.name|upper ]]_CLOSED
         and (entry.after or {}).get(WORKFLOW_FIELD) != (entry.before or {}).get(WORKFLOW_FIELD)
     )
 [% else %]
@@ -393,7 +394,10 @@ def detail_row(
     decisions = [
         {"label": option.title(), "value": option, "tone": [[ spec.workflow_field.name|upper ]]_TONES.get(option, "neutral")}
         for option in [[ spec.workflow_field.name|upper ]]_OPTIONS
-        if option != current_value
+        if option in [[ spec.workflow_field.name|upper ]]_TRANSITIONS.get(
+            current_value,
+            tuple(option for option in [[ spec.workflow_field.name|upper ]]_OPTIONS if option != current_value),
+        )
     ]
 [% endif %]
     return templates.TemplateResponse(
@@ -437,6 +441,15 @@ def decide_row(
     row = _get(session, [[ spec.entity ]]_id)
     if [[ spec.workflow_field.name ]] not in [[ spec.workflow_field.name|upper ]]_OPTIONS:
         raise HTTPException(status_code=400, detail="invalid status")
+    if [[ spec.workflow_field.name ]] not in [[ spec.workflow_field.name|upper ]]_TRANSITIONS.get(
+        row.[[ spec.workflow_field.name ]],
+        tuple(
+            option
+            for option in [[ spec.workflow_field.name|upper ]]_OPTIONS
+            if option != row.[[ spec.workflow_field.name ]]
+        ),
+    ):
+        raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"[[ spec.workflow_field.name ]]": [[ spec.workflow_field.name ]]})
     return RedirectResponse(
         request.url_for("[[ spec.app ]]_list"), status_code=303

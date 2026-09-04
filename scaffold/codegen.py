@@ -302,6 +302,11 @@ def model_import_names(spec: Spec) -> str:
     names = [spec.class_name]
     names += [f"{field.name.upper()}_OPTIONS" for field in spec.fields if field.type == ENUM]
     names += [f"{field.name.upper()}_TONES" for field in spec.fields if field.type == ENUM]
+    names += [
+        f"{field.name.upper()}_TRANSITIONS"
+        for field in spec.fields
+        if field.type == ENUM and field.workflow
+    ]
     return ", ".join(names)
 
 

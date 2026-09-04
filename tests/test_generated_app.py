@@ -242,7 +242,7 @@ def test_numbers_the_column_cannot_hold_are_refused(client, session, quantity):
 
 
 def test_a_decimal_quantity_survives_the_round_trip(client, session):
-    client.post("/widgets", data={"label": "Alpha", "quantity": "42.5"})
+    client.post("/widgets", data={"label": "Alpha", "quantity": "42.5", "status": "draft"})
 
     assert str(session.scalars(select(Widget)).one().quantity) == "42.5000"
     assert 'step="any"' in client.get("/widgets/new").text
@@ -305,7 +305,7 @@ def test_an_editor_may_still_write(client, session, editor, widget):
     as_user(client, editor)
 
     assert client.get("/widgets/new").status_code == 200
-    assert client.post("/widgets/1", data={"label": "Beta"}).status_code == 200
+    assert client.post("/widgets/1", data={"label": "Beta", "status": "draft"}).status_code == 200
     assert session.scalars(select(Widget)).one().label == "Beta"
 
 
@@ -391,3 +391,61 @@ def test_required_sensitive_fields_make_creation_admin_only(
     assert "CUS-001" not in listing.text
     assert "Ada Lovelace" not in form.text
     assert "CUS-001" not in form.text
+
+
+def test_kyc_workflow_transitions_limit_decisions(client, session, editor, seeded):
+    response = client.post(
+        "/kyc-queue",
+        data={
+            "customer_name": "Ada Lovelace",
+            "customer_ref": "CUS-002",
+            "risk_score": "10",
+            "status": "pending",
+            "submitted_on": "2026-01-01",
+            "reviewer_id": str(seeded.id),
+            "notes": "Initial review",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    row = session.scalars(select(KycReview)).one()
+
+    as_user(client, editor)
+    approved = client.post(
+        f"/kyc-queue/{row.id}/status",
+        data={"status": "approved"},
+        follow_redirects=False,
+    )
+    assert approved.status_code == 303
+    assert approved.headers["location"].endswith("/kyc-queue")
+    session.refresh(row)
+    assert row.status == "approved"
+
+    updates_before = session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "kyc_review",
+            AuditLog.row_id == str(row.id),
+            AuditLog.action == AuditLog.ACTION_UPDATE,
+        )
+    ).all()
+    rejected = client.post(
+        f"/kyc-queue/{row.id}/status",
+        data={"status": "pending"},
+    )
+    assert rejected.status_code == 400
+    assert "transition not allowed" in rejected.text
+    updates_after = session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "kyc_review",
+            AuditLog.row_id == str(row.id),
+            AuditLog.action == AuditLog.ACTION_UPDATE,
+        )
+    ).all()
+    assert len(updates_after) == len(updates_before)
+    assert "Decision" not in client.get(f"/kyc-queue/{row.id}").text
+    audit.update(session, row, {"status": "rejected"}, actor=editor)
+    queue = client.get("/kyc-queue?state=all")
+    assert re.search(
+        r'<span class="stat-value">1</span><span class="stat-label">Decided today</span>',
+        queue.text,
+    )

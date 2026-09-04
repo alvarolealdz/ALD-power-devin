@@ -2,8 +2,8 @@
   "app": "kyc_queue",
   "files": {
     "apps/kyc_queue/__init__.py": "c64bdf6a38a985e83e7f10fcffca934f937c593ab6a83253a1a8693e7d4941aa",
-    "apps/kyc_queue/model.py": "3fa758fbc3dc6d33c67e0c505614fec778fead4f51669f42aed2ea8d26dfe0ea",
-    "apps/kyc_queue/routes.py": "4467bb523a1ff1ca9230f0bf3e083f898bea56c448134c68ab6b3c164a498334",
+    "apps/kyc_queue/model.py": "eccb356bb2ca457b36e039d39055decc9aec0aea00fa1474b574d965fd39a06d",
+    "apps/kyc_queue/routes.py": "2e0696bfabce4a7de0dac8bdfcb31d7eb38a5a13a4e86ba97add26e482eb233e",
     "apps/kyc_queue/templates/detail.html": "40c265d3fe335d8642edd85d44caf14cd8b06f6841e97f7de9ab17e76762d672",
     "apps/kyc_queue/templates/form.html": "97f211290293644efc11a587ab0ad1fb62ad0288958b388fc729e9af30fc8bd7",
     "apps/kyc_queue/templates/list.html": "6abbf75c55f16fe41561df70109f8833a7034c1813bcd93ed6496928cb40bdc3",

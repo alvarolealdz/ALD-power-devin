@@ -26,6 +26,11 @@ fields:
     options: [pending, approved, rejected, escalated]
     workflow: true
     open: [pending, escalated]
+    transitions:
+      pending: [approved, rejected, escalated]
+      escalated: [approved, rejected]
+      approved: []
+      rejected: []
     tones: {pending: warning, approved: success, rejected: danger, escalated: info}
 
   - name: submitted_on

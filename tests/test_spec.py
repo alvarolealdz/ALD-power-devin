@@ -42,6 +42,7 @@ def test_description_workflow_tones_and_samples_are_parsed():
                     "type": "enum",
                     "options": ["draft", "done"],
                     "workflow": True,
+                    "required": True,
                     "open": ["draft"],
                     "tones": {"done": "success"},
                 },
@@ -99,8 +100,20 @@ def test_two_workflow_fields_are_rejected():
             {
                 **MINIMAL,
                 "fields": [
-                    {"name": "first", "type": "enum", "options": ["a"], "workflow": True},
-                    {"name": "second", "type": "enum", "options": ["b"], "workflow": True},
+                    {
+                        "name": "first",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["a"],
+                        "workflow": True,
+                    },
+                    {
+                        "name": "second",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["b"],
+                        "workflow": True,
+                    },
                 ],
             }
         )
@@ -124,6 +137,7 @@ def test_workflow_open_states_are_validated(open_states, message):
                     {
                         "name": "status",
                         "type": "enum",
+                        "required": True,
                         "options": ["draft", "done"],
                         "workflow": True,
                         "open": open_states,
@@ -144,6 +158,98 @@ def test_open_states_are_rejected_without_workflow():
                         "type": "enum",
                         "options": ["draft", "done"],
                         "open": ["draft"],
+                    }
+                ],
+            }
+        )
+
+
+def test_workflow_transitions_parse_and_default_allowed_targets():
+    spec = parse(
+        {
+            **MINIMAL,
+            "fields": [
+                {
+                    "name": "status",
+                    "type": "enum",
+                    "required": True,
+                    "options": ["pending", "approved", "rejected", "escalated"],
+                    "workflow": True,
+                    "transitions": {
+                        "pending": ["approved", "escalated"],
+                        "approved": [],
+                    },
+                }
+            ],
+        }
+    )
+    field = spec.workflow_field
+    assert field is not None
+    assert field.transitions == {
+        "pending": ("approved", "escalated"),
+        "approved": (),
+    }
+    assert field.allowed_from("pending") == ("approved", "escalated")
+    assert field.allowed_from("approved") == ()
+    assert field.allowed_from("rejected") == ("pending", "approved", "escalated")
+
+
+@pytest.mark.parametrize(
+    ("transitions", "message"),
+    [
+        ({"unknown": ["approved"]}, "transition state"),
+        ({"pending": ["unknown"]}, "transition target"),
+        ({"pending": ["pending"]}, "itself"),
+    ],
+)
+def test_workflow_transitions_are_validated(transitions, message):
+    with pytest.raises(SpecError, match=message):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["pending", "approved"],
+                        "workflow": True,
+                        "transitions": transitions,
+                    }
+                ],
+            }
+        )
+
+
+def test_transitions_are_rejected_without_workflow():
+    with pytest.raises(SpecError, match="only applies"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "required": True,
+                        "options": ["pending", "approved"],
+                        "transitions": {"pending": ["approved"]},
+                    }
+                ],
+            }
+        )
+
+
+def test_workflow_fields_are_required():
+    with pytest.raises(SpecError, match="workflow fields must be required"):
+        parse(
+            {
+                **MINIMAL,
+                "fields": [
+                    {
+                        "name": "status",
+                        "type": "enum",
+                        "options": ["pending", "approved"],
+                        "workflow": True,
                     }
                 ],
             }

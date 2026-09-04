@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from apps.widgets.model import STATUS_OPTIONS, STATUS_TONES, Widget
+from apps.widgets.model import STATUS_OPTIONS, STATUS_TONES, STATUS_TRANSITIONS, Widget
 from foundation import audit, auth, forms
 from foundation.deps import CurrentUser, DbSession
 from foundation.models import AuditLog, User
@@ -168,10 +168,9 @@ def _fields(session: Session, values: dict[str, object], admin: bool) -> list[di
             "name": "status",
             "label": "Status",
             "value": values.get("status"),
-            "required": False,
+            "required": True,
             "type": "select",
-            "options": [{"value": "", "label": "—"}]
-            + [{"value": option, "label": option} for option in STATUS_OPTIONS],
+            "options": [{"value": option, "label": option} for option in STATUS_OPTIONS],
         },
         {
             "name": "owner_id",
@@ -221,7 +220,15 @@ def _parse(raw: dict[str, str | None], admin: bool) -> tuple[dict[str, object], 
     forms.collect(values, errors, "quantity", forms.number, raw.get("quantity"))
     forms.collect(values, errors, "due_on", forms.day, raw.get("due_on"))
     values["active"] = forms.boolean(raw.get("active"))
-    forms.collect(values, errors, "status", forms.choice, raw.get("status"), options=STATUS_OPTIONS)
+    forms.collect(
+        values,
+        errors,
+        "status",
+        forms.choice,
+        raw.get("status"),
+        options=STATUS_OPTIONS,
+        required=True,
+    )
     forms.collect(values, errors, "owner_id", forms.reference, raw.get("owner_id"))
     if admin:
         forms.collect(
@@ -320,6 +327,7 @@ def list_rows(
             )
         )
         if (entry.after or {}).get(WORKFLOW_FIELD) in STATUS_CLOSED
+        and (entry.before or {}).get(WORKFLOW_FIELD) not in STATUS_CLOSED
         and (entry.after or {}).get(WORKFLOW_FIELD) != (entry.before or {}).get(WORKFLOW_FIELD)
     )
     new_url = str(request.url_for("widgets_new")) if auth.can_write(current_user) else None
@@ -423,7 +431,11 @@ def detail_row(request: Request, session: DbSession, current_user: CurrentUser, 
     decisions = [
         {"label": option.title(), "value": option, "tone": STATUS_TONES.get(option, "neutral")}
         for option in STATUS_OPTIONS
-        if option != current_value
+        if option
+        in STATUS_TRANSITIONS.get(
+            current_value,
+            tuple(option for option in STATUS_OPTIONS if option != current_value),
+        )
     ]
     return templates.TemplateResponse(
         request,
@@ -463,6 +475,11 @@ def decide_row(
     row = _get(session, widget_id)
     if status not in STATUS_OPTIONS:
         raise HTTPException(status_code=400, detail="invalid status")
+    if status not in STATUS_TRANSITIONS.get(
+        row.status,
+        tuple(option for option in STATUS_OPTIONS if option != row.status),
+    ):
+        raise HTTPException(status_code=400, detail="transition not allowed")
     audit.update(session, row, {"status": status})
     return RedirectResponse(request.url_for("widgets_list"), status_code=303)
 

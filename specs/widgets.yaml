@@ -21,6 +21,7 @@ fields:
 
   - name: status
     type: enum
+    required: true
     options: [draft, review, done]
     workflow: true
     open: [draft, review]

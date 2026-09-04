@@ -22,6 +22,8 @@ only read. Every
 write lands in the audit trail through `foundation.audit`, same as any other
 app.
 
+Workflow decisions follow the allowed transitions declared in the spec.
+
 ## Regenerating
 
 `uv run python scaffold/generate.py specs/kyc_queue.yaml` — hand-edited
