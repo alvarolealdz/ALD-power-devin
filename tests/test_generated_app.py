@@ -3,6 +3,8 @@
 These exercise generated code exactly as a developer would find it on disk.
 """
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -180,13 +182,20 @@ def test_a_viewer_can_read(client, viewer, widget):
     assert client.get("/widgets/1").status_code == 200
 
 
-def test_a_viewer_is_offered_no_way_to_write(client, viewer, widget):
+def test_a_viewer_is_offered_no_way_to_write(client, viewer, editor, widget):
     as_user(client, viewer)
 
     assert "New widget" not in client.get("/widgets").text
     form = client.get("/widgets/1").text
     assert ">Save<" not in form
     assert ">Delete<" not in form
+    controls = re.findall(r"<(?:input|select|textarea)\b[^>]*>", form)
+    editable = [tag for tag in controls if 'name="user_id"' not in tag]
+    assert editable and all("disabled" in tag for tag in editable)
+
+    as_user(client, editor)
+    form = client.get("/widgets/1").text
+    assert "disabled" not in form.split('<form class="form"')[1]
 
 
 @pytest.mark.parametrize(
