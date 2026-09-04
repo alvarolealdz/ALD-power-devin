@@ -4,6 +4,17 @@ Two layers: `foundation/` — identity, roles, an audit trail no write can escap
 base Jinja templates — and `apps/`, generated on top of it by
 `scaffold/generate.py`. See `AGENTS.md` for the why.
 
+## Prerequisites
+
+- Python 3.11 or newer (`requires-python = ">=3.11"`; developed on 3.11).
+- [uv](https://docs.astral.sh/uv/) — every command below goes through it.
+  Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (or
+  `pipx install uv`, or `brew install uv`). `uv sync` creates `.venv/` and
+  installs the locked dependencies; nothing else to set up.
+
+The dev database is SQLite at `./app.db`, created by `alembic upgrade head`.
+Delete it to start over.
+
 ## Run it
 
 ```bash
@@ -14,7 +25,7 @@ uv run python scaffold/generate.py specs/refunds.yaml   # writes apps/refunds/ +
 uv run python scaffold/generate.py specs/feature_flags.yaml # writes apps/feature_flags/ + a migration
 uv run python scaffold/generate.py specs/vendor_contracts.yaml # writes apps/vendor_contracts/ + a migration
 uv run alembic upgrade head                             # create the schema
-uv run python -m foundation.seed                        # roles + admin@example.com
+uv run python -m foundation.seed                        # roles + admin/editor/viewer users
 uv run python scaffold/seed.py specs/widgets.yaml --rows 30
 uv run python scaffold/seed.py specs/kyc_queue.yaml --rows 12
 uv run python scaffold/seed.py specs/refunds.yaml --rows 25
@@ -57,18 +68,70 @@ fields:
     sensitive: true     # admin-only, server-side, in the list and the form
 ```
 
-A field that is both `required` and `sensitive` makes creation admin-only.
+A field that is both `required` and `sensitive` makes creation admin-only
+(an editor cannot fill in a field they cannot see).
 
-An enum field may opt into workflow decisions with `workflow: true` and map
-its options to badge tones with `tones`; non-foreign-key, non-boolean fields
-can use `sample` values or a named sample kind for deterministic seeding.
+Optional top-level keys: `app` (directory and URL prefix, default derived from
+`entity`), `title` (nav and page heading), `singular` (button and heading
+noun, e.g. `KYC review`), `description` (home card, list header, empty state).
+
+### Workflow apps
+
+One enum field per spec may drive a queue. `specs/kyc_queue.yaml` in full:
+
+```yaml
+  - name: status
+    type: enum
+    required: true                 # workflow fields must be required
+    options: [pending, approved, rejected, escalated]
+    workflow: true                 # this field is the queue state
+    open: [pending, escalated]     # what "Needs decision" shows; the rest is closed
+    transitions:                   # optional; unlisted states may move anywhere
+      pending: [approved, rejected, escalated]
+      escalated: [approved, rejected]
+      approved: []                 # empty list = terminal
+      rejected: []
+    tones: {pending: warning, approved: success, rejected: danger, escalated: info}
+```
+
+What that buys the app, all generated, none of it hand-written:
+
+- the list defaults to `open` states oldest-first, with a tab per state and
+  "All", and a Waiting / Decided today / Total strip on top;
+- the detail page shows one "Mark …" button per allowed transition, posting
+  to `/<app>/<id>/status`; a decision redirects back to the queue;
+- the edit form's status dropdown offers only current + allowed targets, and
+  the server rejects anything else (400) on both the decision and edit routes;
+- the decision form carries the state it was rendered with and gets a 409 if
+  the record moved in the meantime;
+- `tones` picks the badge colour from `neutral | info | success | warning |
+  danger`; unlisted options are neutral.
+
+Without `transitions:` every state can move to every other state (this is how
+`widgets` and `vendor_contracts` behave). Without `workflow: true` the app is a
+plain CRUD panel (`feature_flags`).
+
+### Seeding
+
+Seeding is optional; the app works empty. `uv run python scaffold/seed.py specs/<name>.yaml --rows 30 [--seed 1]
+[--today YYYY-MM-DD] [--append]` fills the table from the spec alone: enums
+spread across options, dates in a recent window, fks picked from real rows,
+all written through `foundation.audit` under a system actor, in one
+transaction. Text fields take an optional `sample:` — either a list of literal
+values or one of `person_name | reference | sentence | words` — so a
+"customer name" gets plausible names without the seeder knowing what a
+customer is.
+
+### What comes out
 
 `uv run python scaffold/generate.py specs/<name>.yaml` writes
-`apps/<name>/{model,routes,templates}` and one Alembic migration chained onto
-the current head. What comes out is ordinary code: a normal SQLAlchemy model, a
-normal `APIRouter`, normal Jinja that extends `layout.html` and includes the
+`apps/<name>/{__init__,model,routes}.py`, `apps/<name>/templates/{list,detail,
+form}.html` (loaded under the `<name>/` prefix), `apps/<name>/.scaffold.json`
+and one Alembic migration chained onto the current head. It is ordinary code: a normal SQLAlchemy model,
+a normal `APIRouter`, normal Jinja that extends `layout.html` and includes the
 foundation partials. Nothing reads the spec at runtime — edit the output like
-any other module.
+any other module. Every list gets a search box over its text columns and
+sortable headers; every detail page gets Edit and a confirmed Delete.
 
 ### Mounting: discovery, not registration
 
@@ -78,6 +141,24 @@ directory to the Jinja loader under its own prefix, and puts its `TITLE` in the
 nav. `migrations/env.py` imports the app models the same way, so autogenerate
 sees them. Adding an app means adding a directory; deleting one means deleting
 it.
+
+Discovery reads these module-level names from `apps/<name>/routes.py`; the
+generator writes all of them and **the home page depends on them**, so keep
+them if you hand-edit the file:
+
+| name | used for | if missing |
+|---|---|---|
+| `router` | mounted into the app | startup fails with `AttributeError` |
+| `TITLE` | nav link, home card heading | falls back to the directory name |
+| `DESCRIPTION` | home card text | empty |
+| `SINGULAR` | activity-feed label ("KYC review #4 approved") | falls back to the directory name |
+| `MODEL` | row count on the home card, activity-feed links | count shows 0, feed entries lose their link |
+| `WORKFLOW_FIELD` + `OPEN_STATES` | "N waiting" on the home card | no waiting count |
+
+Only `router` fails loudly; the rest degrade silently, so a rename in
+`routes.py` shows up as a wrong home page, not an error. `tests/test_web.py`
+and `tests/test_generated_app.py` cover the home page for the generated apps;
+extend them if you rename one on purpose.
 
 ### Regenerating
 
@@ -103,13 +184,10 @@ hidden New/Save/Delete controls are cosmetic, the refusal is server-side.
 ### Known limitation: auth is mocked
 
 There is no login. The current user is whatever id sits in the unsigned
-`current_user_id` cookie, so anyone can set it to the admin's id and act as
-them; the header dropdown does exactly that on purpose, because switching roles
-is how you see the foundation work. **This is a demo affordance and not
-authentication** — before this faces a real user it needs a real login and a
-signed session cookie. Nothing else in the system depends on how the current
-user is established, so replacing `foundation/auth.py::current_user` is the
-whole change.
+`current_user_id` cookie; the header dropdown sets it on purpose, because
+switching roles is how you see the foundation work. **This is a demo
+affordance and not authentication.** See `LIMITATIONS.md` for this and
+everything else that stands between the repo and production.
 
 ### Writes and sensitive fields
 
@@ -170,7 +248,23 @@ Reads are untouched.
 
 ## Templates
 
-`foundation/templates/` — `layout.html`, `partials/table.html`,
-`partials/form.html`, `partials/user_switcher.html`. They take plain dicts
-(`columns`, `rows`, `fields`) and know nothing about any domain; generated apps
-supply the data.
+`foundation/templates/` — shared by every app, domain-free, fed plain dicts:
+
+- `layout.html` — top bar, nav from discovery, user switcher, the one inline
+  script (delete confirmation via `data-confirm`).
+- `index.html` — home: app cards then the cross-app activity feed.
+- `error.html` — rendered for any `HTTPException` when the client accepts
+  HTML; JSON otherwise.
+- `partials/table.html` — `columns` (each with a `kind`: `text | number |
+  date | badge | link | id`, optional `sort_href`/`sorted`), `rows`,
+  `actions`, `empty` with title/text/cta.
+- `partials/form.html` — `fields` (name, label, type, value, options, step),
+  `errors`; renders every control `disabled` when `submit_label` is `None`.
+- `partials/record.html` — label/value detail card, same `kind` vocabulary.
+- `partials/badge.html` — `{label, tone}`.
+- `partials/user_switcher.html` — the mock-auth dropdown.
+
+The generator's own templates are in `scaffold/templates/*.j2` and emit, per
+app, `templates/list.html`, `detail.html` and `form.html`, each extending
+`layout.html` and including the partials above. Those emitted files are yours
+to edit like any other; regeneration keeps them once they differ.

@@ -15,7 +15,7 @@ from apps.widgets.model import Widget
 from foundation import audit, auth, discovery
 from foundation.app import app
 from foundation.config import CURRENT_USER_COOKIE
-from foundation.models import ROLE_EDITOR, ROLE_VIEWER, AuditLog, Role, User
+from foundation.models import AuditLog, User
 
 
 @pytest.fixture()
@@ -37,18 +37,12 @@ def client(engine, session, seeded):
 
 @pytest.fixture()
 def editor(session, seeded):
-    role = session.scalars(select(Role).where(Role.name == ROLE_EDITOR)).one()
-    user = User(email="editor@example.com", display_name="Editor", role_id=role.id)
-    audit.insert(session, user, actor=seeded)
-    return user
+    return session.scalars(select(User).where(User.email == "editor@example.com")).one()
 
 
 @pytest.fixture()
 def viewer(session, seeded):
-    role = session.scalars(select(Role).where(Role.name == ROLE_VIEWER)).one()
-    user = User(email="viewer@example.com", display_name="Viewer", role_id=role.id)
-    audit.insert(session, user, actor=seeded)
-    return user
+    return session.scalars(select(User).where(User.email == "viewer@example.com")).one()
 
 
 @pytest.fixture()
@@ -128,7 +122,7 @@ def test_detail_and_workflow_decision_are_role_aware(client, session, editor, vi
         in detail.text
     )
     assert "Decision" in detail.text
-    assert "Mark Review" in detail.text
+    assert "Mark review" in detail.text
 
     as_user(client, viewer)
     viewer_detail = client.get("/widgets/1")

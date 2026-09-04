@@ -4,7 +4,7 @@
     "apps/feature_flags/__init__.py": "9cea6e29b1bdd968bff582bce0442b47e2bc097aa28573d56e207308b7fa0eee",
     "apps/feature_flags/model.py": "f648352dcd316cc3d84e60961d70f608d62ab24b1fcb17bfe2e3356dad9e564b",
     "apps/feature_flags/routes.py": "74f1d9bd8152dd07acac36bf160b81845791acbf3d2627ee6bbef18762675f4d",
-    "apps/feature_flags/templates/detail.html": "955e0eba4e62767e6bf0513ac0cc00c1a267ff860fee8ac835efb249494fad39",
+    "apps/feature_flags/templates/detail.html": "d38313cd800cbe01a586c86c39374c5bf5df6b8657219ba945b0bc70558d2fcd",
     "apps/feature_flags/templates/form.html": "98c79de249bf2192d6e38beb996808055fb56937956bd17d0b0106c3f146d66a",
     "apps/feature_flags/templates/list.html": "106cd3fe45f2de0dbee1838bbf3d2481f932b7190070e6dd6fabfd5f38f6e4f7",
     "migrations/versions/30ebf50c3a7e_create_feature_flags.py": "82cc2cf09588dd4dec737f2985f33b5f9de30058662de46c292bdc93a08af86b"

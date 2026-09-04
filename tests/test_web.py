@@ -105,9 +105,7 @@ def test_index_shows_seeded_admin(client, seeded):
 
 
 def test_switch_user_changes_current_user(client, session, seeded):
-    viewer_role = session.scalars(select(Role).where(Role.name == ROLE_VIEWER)).one()
-    viewer = User(email="viewer@example.com", display_name="Viewer", role_id=viewer_role.id)
-    audit.insert(session, viewer, actor=seeded)
+    viewer = session.scalars(select(User).where(User.email == "viewer@example.com")).one()
 
     response = client.post("/switch-user", data={"user_id": viewer.id})
     assert response.status_code == 200

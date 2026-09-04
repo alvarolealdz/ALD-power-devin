@@ -1,4 +1,7 @@
-"""Seed the roles and the first admin user.
+"""Seed the roles and one user per role.
+
+The admin is the account everything starts from; the editor and viewer exist so
+the user switcher has someone to switch to.
 
 Idempotent: running it twice writes nothing the second time. Everything here
 goes through foundation.audit like any other write, attributed to the "seed"
@@ -26,16 +29,17 @@ def seed_roles(session: Session) -> dict[str, Role]:
     return roles
 
 
+def seed_user(session: Session, roles: dict[str, Role], role_name: str) -> User:
+    email = DEFAULT_ADMIN_EMAIL if role_name == ROLE_ADMIN else f"{role_name}@example.com"
+    user = session.scalars(select(User).where(User.email == email)).first()
+    if user is None:
+        user = User(email=email, display_name=role_name.capitalize(), role_id=roles[role_name].id)
+        audit.insert(session, user)
+    return user
+
+
 def seed_admin(session: Session, roles: dict[str, Role]) -> User:
-    admin = session.scalars(select(User).where(User.email == DEFAULT_ADMIN_EMAIL)).first()
-    if admin is None:
-        admin = User(
-            email=DEFAULT_ADMIN_EMAIL,
-            display_name=DEFAULT_ADMIN_NAME,
-            role_id=roles[ROLE_ADMIN].id,
-        )
-        audit.insert(session, admin)
-    return admin
+    return seed_user(session, roles, ROLE_ADMIN)
 
 
 def seed(session: Session | None = None) -> User:
@@ -44,7 +48,11 @@ def seed(session: Session | None = None) -> User:
     try:
         with audit.system_actor("seed"):
             roles = seed_roles(session)
-            return seed_admin(session, roles)
+            admin = seed_admin(session, roles)
+            for role_name in ROLE_NAMES:
+                if role_name != ROLE_ADMIN:
+                    seed_user(session, roles, role_name)
+            return admin
     finally:
         if owned:
             session.close()
@@ -52,7 +60,7 @@ def seed(session: Session | None = None) -> User:
 
 def main() -> None:
     admin = seed()
-    print(f"seeded admin user: {admin.email} (id={admin.id})")
+    print(f"seeded one user per role; admin is {admin.email} (id={admin.id})")
 
 
 if __name__ == "__main__":

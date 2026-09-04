@@ -4,7 +4,7 @@
     "apps/widgets/__init__.py": "083c830099f3b8253173fb332a2ffe3d6bbdb0f03ec077a6b6ec1d560cde87bd",
     "apps/widgets/model.py": "c4f7ef710ff67447539d68a30989286b05ecdadb28d205cbbd4d5f5f7e3de124",
     "apps/widgets/routes.py": "792b52355743275954afddee1c323e5d9f6696ca929d3cb27ab5a6fe2a45a1fb",
-    "apps/widgets/templates/detail.html": "dc8aae5b01e930894f0aef81e0714af24c65fbaf5f7b82ff78c78e5615e56e43",
+    "apps/widgets/templates/detail.html": "14ec14380a0a2000b7930895ecfbedec69def73616b608b6dfbdc14d20bf311d",
     "apps/widgets/templates/form.html": "2ee411c2278190b2f8de10e37f6a839934b43692d2e869c17d6cb553df226bd7",
     "apps/widgets/templates/list.html": "b4c1f22079116554eb1c460bfb66c9a88919df8d711e73167de6c7dcfa33528c",
     "migrations/versions/7f03ffc9f34f_create_widgets.py": "29eb4565eb7f79b8385d9379c600ff5deb823cec0ed057dee3f048d8bc78b9d2"

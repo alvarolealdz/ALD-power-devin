@@ -6,7 +6,7 @@ Edit freely: regenerating keeps any file you have changed. #}
   <div class="page-head">
     <div>
       <p class="crumbs"><a href="{{ list_url }}">Feature flags</a> / #{{ row_id }}</p>
-      <h1>feature flag #{{ row_id }}</h1>
+      <h1>Feature flag #{{ row_id }}</h1>
     </div>
     {% if edit_url or delete_url %}
       <div class="actions">
@@ -27,7 +27,7 @@ Edit freely: regenerating keeps any file you have changed. #}
         <form action="{{ decision_url }}" method="post" class="decision-actions">
           <input type="hidden" name="expected" value="{{ current.label }}">
           {% for decision in decisions %}
-            <button class="btn tone-{{ decision.tone }}" name="" value="{{ decision.value }}">Mark {{ decision.label }}</button>
+            <button class="btn tone-{{ decision.tone }}" name="" value="{{ decision.value }}">Mark {{ decision.label|lower }}</button>
           {% endfor %}
         </form>
       </aside>

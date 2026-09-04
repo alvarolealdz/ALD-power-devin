@@ -342,3 +342,13 @@ def test_a_field_cannot_take_an_fks_relationship_name():
 def test_enum_options_have_to_fit_the_column(option, message):
     with pytest.raises(SpecError, match=message):
         parse({**MINIMAL, "fields": [{"name": "a", "type": "enum", "options": [option]}]})
+
+
+def test_singular_heading_capitalises_only_the_first_character():
+    from scaffold.spec import Spec
+
+    assert Spec.singular_heading.fget(type("S", (), {"singular_title": "refund"})()) == "Refund"
+    assert (
+        Spec.singular_heading.fget(type("S", (), {"singular_title": "KYC review"})())
+        == "KYC review"
+    )
